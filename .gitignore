@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Banco de dados local
+*.db
+
+# Logs
+logs/
+*.log
+
+# Ambiente / IDE
+.env
+.vscode/
+.idea/
+
+# Pytest
+.pytest_cache/

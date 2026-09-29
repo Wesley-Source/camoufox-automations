@@ -1,0 +1,6 @@
+camoufox[geojson]
+mcp
+typer
+sqlalchemy
+pytest
+pydantic
