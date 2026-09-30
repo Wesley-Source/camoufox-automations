@@ -42,6 +42,7 @@ def client():
     c = SigmaApiClient.__new__(SigmaApiClient)  # pula boot/validação de rede
     c.session_path = "/tmp/x.json"
     c._doh_ip = None
+    c._browser = False
     c.token = "TEST|token"
     c._session = FakeSession([])
     return c
