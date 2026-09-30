@@ -5,7 +5,7 @@ import typer
 
 from core.sigma.auth import SESSION_FILE, login
 from core.sigma.api import open_client
-from core.sigma.scraper import SYNCERS, entities_summary, sync_all
+from core.sigma.scraper import SYNCERS, entities_summary, sync_all, sync_customers
 
 
 def register(app: typer.Typer):
@@ -32,6 +32,7 @@ def register(app: typer.Typer):
     def cli_sigma_sync(
         what: str = typer.Option("customers", help="customers|expiring|dashboard|resellers|statistics|all"),
         pages: int = typer.Option(5, help="Páginas de clientes (quando aplicável)."),
+        per_page: int = typer.Option(100, help="Clientes por página (cap real da API: 100)."),
     ):
         """Sincroniza dados do painel Sigma para o banco local (read-only)."""
         if what not in (*SYNCERS, "all"):
@@ -39,7 +40,12 @@ def register(app: typer.Typer):
             raise typer.Exit(1)
         try:
             with open_client() as client:
-                results = sync_all(client, pages) if what == "all" else [SYNCERS[what](client, pages)]
+                if what == "all":
+                    results = sync_all(client, pages, per_page)
+                elif what == "customers":
+                    results = [sync_customers(client, pages, per_page)]
+                else:
+                    results = [SYNCERS[what](client)]
         except Exception as e:
             typer.secho(f"✖ Sync falhou: {e}", fg=typer.colors.RED)
             raise typer.Exit(1)

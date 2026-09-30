@@ -6,8 +6,8 @@ em explore/PANEL_MAP.md. Nenhuma superfície de mutação.
 
 TRANSPORTE: o Cloudflare exige fingerprint de browser (requests puro toma
 403 "Just a moment"), então o caminho padrão é `open_client()`: browser via
-Playwright e as chamadas passam por page.context.request (TLS real + cookies
-da sessão, sem renderizar página). O motor requests+DoH permanece como
+Playwright e as chamadas passam por fetch DENTRO da página (TLS real + DoH
+do browser, sem renderizar nada). O motor requests+DoH permanece como
 fallback/motor de teste (unit tests), mas é bloqueado pelo CF em produção.
 
 Auth: token de sigma_session.json (auth.load_session), "Authorization:
@@ -76,17 +76,19 @@ class _BrowserTransport:
     não serve: resolve DNS no Node e morre no getaddrinfo).
     """
 
-    def __init__(self, page):
+    def __init__(self, page, extra_headers: dict | None = None):
         self._page = page
+        self._extra = extra_headers or {}
 
     def get(self, url, params=None, headers=None, timeout=None):
         if params:
             from urllib.parse import urlencode
             url = f"{url}?{urlencode(params)}"
+        merged = {**self._extra, **(headers or {})}
         status, text = self._page.evaluate(
             "async ([u, h]) => { const r = await fetch(u, {headers: h});"
             " return [r.status, await r.text()]; }",
-            [url, headers or {}],
+            [url, merged],
         )
         return _BrowserResponse(status, text)
 
@@ -210,8 +212,15 @@ class SigmaApiClient:
     def me(self) -> dict:
         return self._get("/auth/me")
 
-    def customers(self, page: int = 1, per_page: int = 15) -> dict:
-        return self._get("/customers", params={"page": page, "per_page": per_page})
+    def customers(self, page: int = 1, per_page: int = 100) -> dict:
+        """
+        Lista paginada de clientes.
+
+        ponytail: a API IGNORA o param snake_case `per_page` (silencioso —
+        volta sempre 15/página); o honrado é camelCase `perPage`, com cap
+        de 100/linha verificado ao vivo (341 clientes -> 4 págs).
+        """
+        return self._get("/customers", params={"page": page, "perPage": per_page})
 
     def customers_expiring(self) -> dict:
         return self._get("/customers/expiring")

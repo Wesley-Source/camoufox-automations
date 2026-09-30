@@ -65,7 +65,8 @@ def test_nao_200_levanta_erro(client):
 def test_params_de_paginacao(client):
     client._session.responses = [FakeResponse(200, {"data": []})]
     client.customers(page=3, per_page=50)
-    assert client._session.calls[0]["params"] == {"page": 3, "per_page": 50}
+    # camelCase: a API ignora per_page snake_case (silencioso)
+    assert client._session.calls[0]["params"] == {"page": 3, "perPage": 50}
 
 
 def test_dns_failure_cai_no_doh(client, monkeypatch):

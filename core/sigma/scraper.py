@@ -14,11 +14,11 @@ from core.sigma.api import SIGMA_API, SigmaApiClient
 CHARTS = ("new-customers", "customer-retention", "revenue-forecast", "lost-revenue")
 
 
-def sync_customers(client: SigmaApiClient, pages: int = 1) -> dict:
+def sync_customers(client: SigmaApiClient, pages: int = 1, per_page: int = 100) -> dict:
     init_db()
     synced, page = 0, 1
     for page in range(1, pages + 1):
-        data = client.customers(page)
+        data = client.customers(page, per_page)
         save_raw(f"{SIGMA_API}/customers?page={page}", data)
         for row in data["data"]:
             save_entity("customer", row["id"], row)
@@ -81,8 +81,8 @@ SYNCERS = {
 }
 
 
-def sync_all(client: SigmaApiClient, pages: int = 5) -> list[dict]:
-    return [sync_customers(client, pages)] + [
+def sync_all(client: SigmaApiClient, pages: int = 5, per_page: int = 100) -> list[dict]:
+    return [sync_customers(client, pages, per_page)] + [
         SYNCERS[name](client) for name in ("expiring", "dashboard", "resellers", "statistics")
     ]
 

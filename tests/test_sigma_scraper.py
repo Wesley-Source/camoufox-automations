@@ -21,7 +21,7 @@ class FakeClient:
                 "meta": {"current_page": 2, "last_page": 2, "total": 20}},
         }
 
-    def customers(self, page, per_page=15):
+    def customers(self, page, per_page=100):
         return self.customers_pages[page]
 
     def customers_expiring(self):
