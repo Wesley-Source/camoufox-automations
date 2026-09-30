@@ -36,6 +36,7 @@ OUT = Path(__file__).parent / "out"
 ROUTES_OUT = OUT / "routes"
 MAP_FILE = OUT / "dashboard_map.json"
 SETTLE_SECONDS = 8
+DATA_GRACE = 6  # pós-router: janela pros GETs de dados da rota
 
 # ponytail: blocklist conservadora pós-mapa do 02 — tudo que é formulário,
 # ferramenta de mutação, configuração ou messaging fica fora; liberar rota a
@@ -67,6 +68,23 @@ def slug_for(route: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", route.lower()).strip("-") or "root"
 
 
+def _wait_route_ready(s, route: str, expected: str, timeout_s: int = 20) -> bool:
+    """
+    Espera o router Vue assentar: hash certo + título esperado (o mapa do 02
+    fornece o texto do menu, que o SPA usa de título). Tolerante a timeout —
+    devolve False e o crawl segue com o wait fixo de graça.
+    """
+    try:
+        s.page.wait_for_function(
+            "([r, prefix]) => location.hash === r && document.title.startsWith(prefix)",
+            [route, expected or ""],
+            timeout=timeout_s * 1000,
+        )
+        return True
+    except Exception:
+        return False
+
+
 def looks_like_anomaly(s) -> str | None:
     """Retorna o motivo se a sessão/página indicar problema, senão None."""
     if "sign-in" in s.page.url:
@@ -95,7 +113,7 @@ def main(
 
     typer.echo(f"{len(routes)} rotas no mapa | {len(skipped_bl)} na blocklist | {len(allowed)} liberadas")
     todo = [
-        r for r in allowed
+        (r, routes[r]) for r in allowed
         if not (ROUTES_OUT / f"{slug_for(r)}.json").exists()
     ][:max_routes]
     if not todo:
@@ -108,10 +126,11 @@ def main(
         with ensure_logged_page(guard=install_guard) as s:
             blocked = s.blocked
             n_before = len(s.captured)
-            for route in todo:
+            for route, expected in todo:
                 typer.echo(f"\n→ {route}")
                 s.page.evaluate(f"() => location.hash = '{route}'")
-                time.sleep(SETTLE_SECONDS)
+                _wait_route_ready(s, route, expected)
+                time.sleep(DATA_GRACE)  # GETs de dados da rota disparam depois do render
 
                 if reason := looks_like_anomaly(s):
                     anomaly = reason
