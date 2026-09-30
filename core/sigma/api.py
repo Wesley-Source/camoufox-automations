@@ -32,6 +32,12 @@ _BODY_SNIPPET = 500
 # UA Firefox — cf_clearance é emitido por browser; UA python-requests puro
 # aumenta a chance de desafio do Cloudflare.
 _UA = "Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0"
+# Sem esses headers, mutações fazem o Laravel responder validação com
+# 302 → HTML status 200 (parece sucesso, não fez nada). Descoberta do 07.
+_AXIOS_HEADERS = {
+    "Accept": "application/json",
+    "X-Requested-With": "XMLHttpRequest",
+}
 
 _DNS_ERRORS = ("name or service not known", "temporary failure in name resolution",
                "nameresolutionerror", "getaddrinfo failed")
@@ -261,5 +267,5 @@ def open_client(session_path: str = "sigma_session.json", proxy: str = None):
     /api/* passam pelo TLS real do Firefox sem renderizar página.
     """
     with ensure_logged_page(session_path=session_path, proxy=proxy) as s:
-        transport = _BrowserTransport(s.page)
+        transport = _BrowserTransport(s.page, extra_headers=_AXIOS_HEADERS)
         yield SigmaApiClient(token=s.token, session_path=session_path, transport=transport)
