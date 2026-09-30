@@ -1,17 +1,18 @@
 """
 Etapa 2 da exploração do painel Sigma — mapa do dashboard, sem clicar em nada.
 
-Com guard ativo (read-only estrito), extrai do DOM:
+Reutiliza a sessão salva (sigma_session.json) se válida; senão refaz login
+(usa sigma_session.json de novo). Com guard ativo (read-only estrito),
+extrai do DOM:
 - todos os links de rota (#/...) do menu lateral = mapa de navegação
 - títulos de seção, tabelas e colunas visíveis
 - screenshot da página inteira
 
 Saída: out/dashboard_map.json + out/dashboard.png
 
-Rode: SIGMA_USERNAME=... SIGMA_PASSWORD=... venv/bin/python core/sigma/explore/02_dashboard_map.py
+Rode: venv/bin/python core/sigma/explore/02_dashboard_map.py
 """
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -20,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import typer  # noqa: E402
 
-from core.sigma.auth import logged_page  # noqa: E402
+from core.sigma.auth import ensure_logged_page  # noqa: E402
 from core.sigma.explore._guard import install_guard, report_blocked  # noqa: E402
 
 OUT = Path(__file__).parent / "out"
@@ -45,42 +46,40 @@ _DOM_SNAPSHOT = """
 
 
 def main():
-    username = os.environ.get("SIGMA_USERNAME")
-    password = os.environ.get("SIGMA_PASSWORD")
-    if not username or not password:
-        typer.secho("✖ Defina SIGMA_USERNAME e SIGMA_PASSWORD.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-
     OUT.mkdir(exist_ok=True)
-    typer.echo("Logando...")
-    with logged_page(username, password, guard=install_guard) as s:
-        typer.echo(f"Aguardando {SETTLE_SECONDS}s o dashboard assentar (só leitura)...")
-        time.sleep(SETTLE_SECONDS)
+    typer.echo("Abrindo painel Sigma (reutiliza sessão salva se válida)...")
+    try:
+        with ensure_logged_page(guard=install_guard) as s:
+            typer.echo(f"Aguardando {SETTLE_SECONDS}s o dashboard assentar (só leitura)...")
+            time.sleep(SETTLE_SECONDS)
 
-        snap = s.page.evaluate(_DOM_SNAPSHOT)
-        s.page.screenshot(path=str(OUT / "dashboard.png"), full_page=True)
+            snap = s.page.evaluate(_DOM_SNAPSHOT)
+            s.page.screenshot(path=str(OUT / "dashboard.png"), full_page=True)
 
-        # Rotas únicas (a mesma rota aparece no menu e em breadcrumbs).
-        routes = {}
-        for l in snap["links"]:
-            routes.setdefault(l["href"], l["text"])
+            # Rotas únicas (a mesma rota aparece no menu e em breadcrumbs).
+            routes = {}
+            for l in snap["links"]:
+                routes.setdefault(l["href"], l["text"])
 
-        gets = [
-            {k: c[k] for k in ("method", "url", "status")}
-            for c in s.captured
-            if c["method"] == "GET"
-        ]
-        data = {
-            "page_title": snap["title"],
-            "routes": routes,
-            "headings": snap["headings"],
-            "tables": snap["tables"],
-            "dashboard_gets": gets,
-            "blocked_by_guard": s.blocked,
-        }
-        (OUT / "dashboard_map.json").write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+            gets = [
+                {k: c[k] for k in ("method", "url", "status")}
+                for c in s.captured
+                if c["method"] == "GET"
+            ]
+            data = {
+                "page_title": snap["title"],
+                "routes": routes,
+                "headings": snap["headings"],
+                "tables": snap["tables"],
+                "dashboard_gets": gets,
+                "blocked_by_guard": s.blocked,
+            }
+            (OUT / "dashboard_map.json").write_text(
+                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+    except RuntimeError as e:
+        typer.secho(f"✖ {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
 
     typer.secho(f"\n✔ {len(routes)} rotas de navegação descobertas:", fg=typer.colors.GREEN)
     for href, text in sorted(routes.items()):

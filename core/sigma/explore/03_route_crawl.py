@@ -1,8 +1,9 @@
 """
 Etapa 3 da exploração do painel Sigma — crawleo cuidadoso das rotas.
 
+Reutiliza a sessão salva (sigma_session.json) se válida; senão refaz login.
 Lê out/dashboard_map.json (gerado pelo 02) e visita cada rota UMA a uma,
-por navegação de hash (equivalente a GET — nada é clicado nem enviado):
+por navegação de hash (equivale a GET — nada é clicado nem enviado):
 
 - Guard ativo: POST/PUT/PATCH/DELETE abortados no nível do browser.
 - Blocklist: rotas com settings/user/admin/billing/finance/payment etc.
@@ -15,10 +16,9 @@ por navegação de hash (equivalente a GET — nada é clicado nem enviado):
 
 Saída: out/routes/<slug>.json + <slug>.png por rota.
 
-Rode: SIGMA_USERNAME=... SIGMA_PASSWORD=... venv/bin/python core/sigma/explore/03_route_crawl.py
+Rode: venv/bin/python core/sigma/explore/03_route_crawl.py
 """
 import json
-import os
 import random
 import re
 import sys
@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import typer  # noqa: E402
 
-from core.sigma.auth import SIGMA_URL, logged_page  # noqa: E402
+from core.sigma.auth import SIGMA_URL, ensure_logged_page  # noqa: E402
 from core.sigma.explore._guard import install_guard, report_blocked  # noqa: E402
 
 OUT = Path(__file__).parent / "out"
@@ -78,11 +78,6 @@ def main(
     max_routes: int = typer.Option(5, help="Máximo de rotas NOVAS por execução."),
     delay: float = typer.Option(3.0, help="Pausa (s) entre rotas."),
 ):
-    username = os.environ.get("SIGMA_USERNAME")
-    password = os.environ.get("SIGMA_PASSWORD")
-    if not username or not password:
-        typer.secho("✖ Defina SIGMA_USERNAME e SIGMA_PASSWORD.", fg=typer.colors.RED)
-        raise typer.Exit(1)
     if not MAP_FILE.exists():
         typer.secho(f"✖ {MAP_FILE} não existe — rode o 02_dashboard_map.py antes.", fg=typer.colors.RED)
         raise typer.Exit(1)
@@ -101,46 +96,53 @@ def main(
         typer.secho("✔ Nada novo a crawlear (todas as liberadas já têm captura).", fg=typer.colors.GREEN)
         return
 
-    done, anomaly = [], None
-    with logged_page(username, password, guard=install_guard) as s:
-        n_before = len(s.captured)
-        for route in todo:
-            typer.echo(f"\n→ {route}")
-            s.page.evaluate(f"() => location.hash = '{route}'")
-            time.sleep(SETTLE_SECONDS)
-
-            if reason := looks_like_anomaly(s):
-                anomaly = reason
-                typer.secho(f"✖ Anomalia: {reason} — parando.", fg=typer.colors.RED)
-                break
-
-            snap = s.page.evaluate(_DOM_SNAPSHOT)
-            new_gets = [
-                {k: c[k] for k in ("method", "url", "status")}
-                for c in s.captured[n_before:]
-                if c["method"] == "GET"
-            ]
+    done, anomaly, blocked, s_block = [], None, [], []
+    typer.echo("Abrindo painel (reutiliza sessão salva se válida)...")
+    try:
+        with ensure_logged_page(guard=install_guard) as s:
+            blocked = s.blocked
             n_before = len(s.captured)
-            s.page.screenshot(path=str(ROUTES_OUT / f"{slug_for(route)}.png"), full_page=True)
-            (ROUTES_OUT / f"{slug_for(route)}.json").write_text(
-                json.dumps(
-                    {"route": route, "page_title": snap["title"], "headings": snap["headings"],
-                     "tables": snap["tables"], "gets": new_gets, "blocked_by_guard": s.blocked},
-                    indent=2, ensure_ascii=False,
-                ),
-                encoding="utf-8",
-            )
-            done.append(route)
-            typer.secho(
-                f"  ✔ {len(new_gets)} GET(s), {len(snap['tables'])} tabela(s)",
-                fg=typer.colors.GREEN,
-            )
-            time.sleep(random.uniform(delay, delay + 2))
+            for route in todo:
+                typer.echo(f"\n→ {route}")
+                s.page.evaluate(f"() => location.hash = '{route}'")
+                time.sleep(SETTLE_SECONDS)
+
+                if reason := looks_like_anomaly(s):
+                    anomaly = reason
+                    typer.secho(f"✖ Anomalia: {reason} — parando.", fg=typer.colors.RED)
+                    break
+
+                snap = s.page.evaluate(_DOM_SNAPSHOT)
+                new_gets = [
+                    {k: c[k] for k in ("method", "url", "status")}
+                    for c in s.captured[n_before:]
+                    if c["method"] == "GET"
+                ]
+                n_before = len(s.captured)
+                s.page.screenshot(path=str(ROUTES_OUT / f"{slug_for(route)}.png"), full_page=True)
+                (ROUTES_OUT / f"{slug_for(route)}.json").write_text(
+                    json.dumps(
+                        {"route": route, "page_title": snap["title"], "headings": snap["headings"],
+                         "tables": snap["tables"], "gets": new_gets, "blocked_by_guard": s.blocked},
+                        indent=2, ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                done.append(route)
+                typer.secho(
+                    f"  ✔ {len(new_gets)} GET(s), {len(snap['tables'])} tabela(s)",
+                    fg=typer.colors.GREEN,
+                )
+                time.sleep(random.uniform(delay, delay + 2))
+            s_block = s.blocked
+    except RuntimeError as e:
+        typer.secho(f"✖ {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
 
     typer.secho(f"\n✔ {len(done)} rota(s) capturada(s) em {ROUTES_OUT}:", fg=typer.colors.GREEN)
     for r in done:
         typer.echo(f"  {r}")
-    report_blocked(s.blocked)
+    report_blocked(s_block)
     if anomaly:
         typer.secho(f"✖ Parado por: {anomaly}", fg=typer.colors.RED)
         raise typer.Exit(1)

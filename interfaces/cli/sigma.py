@@ -3,9 +3,7 @@ import os
 
 import typer
 
-from core.sigma.auth import login
-
-SESSION_FILE = "sigma_session.json"
+from core.sigma.auth import SESSION_FILE, login
 
 
 def register(app: typer.Typer):
