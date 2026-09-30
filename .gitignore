@@ -18,3 +18,4 @@ logs/
 
 # Pytest
 .pytest_cache/
+sigma_session.json

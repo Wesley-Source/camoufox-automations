@@ -1,7 +1,7 @@
-import sys
-from core.database import init_db
-from interfaces.cli import cli_app
 from interfaces.mcp_server import mcp_app
+from interfaces.cli import cli_app
+from core.database import init_db
+import sys
 
 if __name__ == "__main__":
     init_db()  # Garante que as tabelas existem
