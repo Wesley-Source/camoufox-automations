@@ -1,11 +1,44 @@
 import json
 import os
+import secrets
+from datetime import datetime, timedelta
 
 import typer
 
 from core.sigma.auth import SESSION_FILE, login
 from core.sigma.api import open_client
-from core.sigma.scraper import SYNCERS, entities_summary, sync_all, sync_customers
+from core.sigma.scraper import (
+    SYNCERS,
+    entities_summary,
+    sync_all,
+    sync_customers,
+)
+
+
+def _find_customer(client, customer_id: str) -> dict | None:
+    """Procura o cliente pelo id paginando a lista (perPage=100)."""
+    page = 1
+    while True:
+        resp = client.customers(page=page)
+        rows = resp.get("data", [])
+        for row in rows:
+            if row.get("id") == customer_id:
+                return row
+        meta = resp.get("meta", {})
+        if page >= meta.get("last_page", 1):
+            return None
+        page += 1
+
+
+def _new_expiry(row: dict, add_days: int, set_date: str | None) -> str | None:
+    if set_date:
+        base = datetime.strptime(set_date, "%Y-%m-%d")
+    else:
+        cur = row.get("expiry_date") or row.get("due_date")
+        if not cur:
+            return None
+        base = datetime.strptime(cur[:10], "%Y-%m-%d")
+    return (base + timedelta(days=add_days)).strftime("%Y-%m-%d")
 
 
 def register(app: typer.Typer):
@@ -66,3 +99,95 @@ def register(app: typer.Typer):
         typer.secho(f"✔ Usuário: {me.get('username')} | Painel expira: {expiry or 'ilimitado'}", fg=typer.colors.GREEN)
         for kind, n in entities_summary().items():
             typer.echo(f"  {kind:18s} {n}")
+
+    # ---- gestão de clientes (mutações; whitelist de 4 operações, sem bulk) ----
+
+    @app.command("sigma-customer-create")
+    def cli_sigma_customer_create(
+        username: str = typer.Option(..., help="Username do cliente no painel."),
+        package_id: int = typer.Option(..., help="ID do pacote (ver painel ou GET /packages/list)."),
+        server_id: int = typer.Option(..., help="ID do servidor (deve casar com o do pacote)."),
+        name: str = typer.Option(None, help="Nome (padrão: username)."),
+        email: str = typer.Option(None, help="Email (padrão: {username}@local.test)."),
+        connections: int = typer.Option(1, help="Nº de conexões."),
+        password: str = typer.Option(None, help="Senha (padrão: gerada; só letras/números/-/@/_)."),
+    ):
+        """Cria um cliente no painel Sigma."""
+        pwd = password or secrets.token_urlsafe(12)
+        payload = {
+            "username": username, "password": pwd, "password_confirmation": pwd,
+            "name": name or username, "email": email or f"{username}@local.test",
+            "connections": connections, "server_id": server_id, "package_id": package_id,
+        }
+        try:
+            with open_client() as client:
+                res = client.create_customer(payload)
+        except Exception as e:
+            typer.secho(f"✖ Create falhou: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        cid = (res.get("data") or {}).get("id") if isinstance(res, dict) else None
+        typer.secho(f"✔ Cliente criado: {username} (id: {cid or '?'}). Senha: {pwd}", fg=typer.colors.GREEN)
+
+    @app.command("sigma-customer-update")
+    def cli_sigma_customer_update(
+        customer_id: str = typer.Argument(..., help="ID do cliente (ex.: ze15VO34L5)."),
+        note: str = typer.Option(None, help="Nova nota."),
+        add_days: int = typer.Option(0, help="Estende a expiração em N dias."),
+        set_expiry: str = typer.Option(None, help="Define expiração fixa YYYY-MM-DD."),
+    ):
+        """Edita nota e/ou expiração de um cliente (busca o row e reenvia o payload completo)."""
+        if not (note or add_days or set_expiry):
+            typer.secho("✖ Nada a mudar: use --note, --add-days ou --set-expiry.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        try:
+            with open_client() as client:
+                row = _find_customer(client, customer_id)
+                if not row:
+                    typer.secho(f"✖ Cliente {customer_id} não encontrado na lista.", fg=typer.colors.RED)
+                    raise typer.Exit(1)
+                payload = dict(row)
+                if note:
+                    payload["note"] = note
+                new_exp = _new_expiry(row, add_days, set_expiry) if (add_days or set_expiry) else None
+                if add_days or set_expiry:
+                    if not new_exp:
+                        typer.secho("✖ Row sem expiry_date — use --set-expiry.", fg=typer.colors.RED)
+                        raise typer.Exit(1)
+                    payload["expiry_date"] = new_exp
+                    payload.pop("due_date", None)
+                res = client.update_customer(customer_id, payload)
+        except typer.Exit:
+            raise
+        except Exception as e:
+            typer.secho(f"✖ Update falhou: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        extra = f" | expira: {new_exp}" if new_exp else ""
+        typer.secho(f"✔ Cliente {customer_id} atualizado{extra}", fg=typer.colors.GREEN)
+
+    @app.command("sigma-customer-delete")
+    def cli_sigma_customer_delete(
+        customer_id: str = typer.Argument(..., help="ID do cliente."),
+        yes: bool = typer.Option(False, "--yes", help="Confirma a exclusão (soft delete)."),
+    ):
+        """Remove um cliente (SOFT delete — restaurável via POST /customers/restore)."""
+        if not yes:
+            typer.secho("✖ Destrutivo: confirme com --yes.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        try:
+            with open_client() as client:
+                res = client.delete_customer(customer_id)
+        except Exception as e:
+            typer.secho(f"✖ Delete falhou: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.secho(f"✔ Cliente {customer_id} removido (soft). Resposta: {res}", fg=typer.colors.GREEN)
+
+    @app.command("sigma-customer-resync")
+    def cli_sigma_customer_resync(customer_id: str = typer.Argument(..., help="ID do cliente.")):
+        """Força resync do cliente no servidor IPTV."""
+        try:
+            with open_client() as client:
+                res = client.resync_customer(customer_id)
+        except Exception as e:
+            typer.secho(f"✖ Resync falhou: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.secho(f"✔ Resync enviado para {customer_id}: {res}", fg=typer.colors.GREEN)
