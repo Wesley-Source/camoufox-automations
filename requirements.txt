@@ -1,5 +1,5 @@
-camoufox[geojson]
-mcp
+camoufox
+mcp<2
 typer
 sqlalchemy
 pytest
