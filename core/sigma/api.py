@@ -1,8 +1,10 @@
 """
-Cliente read-only da API do painel Sigma.
+Cliente da API do painel Sigma.
 
-Segurança por construção: só existem métodos GET, um por endpoint mapeado
-em explore/PANEL_MAP.md. Nenhuma superfície de mutação.
+Leitura: só GET, um por endpoint mapeado em explore/PANEL_MAP.md.
+MUTAÇÃO: apenas 4 métodos curated (ciclo de vida validado no explore 07):
+create/update/resync/delete de cliente — sem endpoints bulk (mass-delete,
+move, migration ficam de fora por decisão de segurança).
 
 TRANSPORTE: o Cloudflare exige fingerprint de browser (requests puro toma
 403 "Just a moment"), então o caminho padrão é `open_client()`: browser via
@@ -95,6 +97,19 @@ class _BrowserTransport:
             "async ([u, h]) => { const r = await fetch(u, {headers: h});"
             " return [r.status, await r.text()]; }",
             [url, merged],
+        )
+        return _BrowserResponse(status, text)
+
+    def request(self, method, url, json=None, headers=None, timeout=None):
+        """Mutações: fetch com method + body JSON (mesma assinatura do requests)."""
+        import json as _json
+        merged = {**self._extra, **(headers or {})}
+        status, text = self._page.evaluate(
+            "async ([u, h, m, b]) => { const r = await fetch(u,"
+            " {method: m, headers: h, body: b});"
+            " return [r.status, await r.text()]; }",
+            [url, merged, method.upper(),
+             _json.dumps(json) if json is not None else None],
         )
         return _BrowserResponse(status, text)
 
@@ -213,6 +228,23 @@ class SigmaApiClient:
         except ValueError:
             raise SigmaApiError(path, r.status_code, f"corpo não-JSON: {r.text}")
 
+    def _mutate(self, method: str, path: str, payload: dict | None = None) -> dict | list:
+        """Mutação com headers axios (sem eles o Laravel responde 302→HTML
+        com status 200 — parece sucesso e não faz nada; descoberta do 07)."""
+        headers = dict(_AXIOS_HEADERS)
+        headers["Content-Type"] = "application/json"
+        headers["Authorization"] = f"Bearer {self.token}"
+        r = self._session.request(
+            method, f"{SIGMA_API}{path}", json=payload, headers=headers,
+            timeout=30_000 if self._browser else 30,
+        )
+        if r.status_code not in (200, 201):
+            raise SigmaApiError(path, r.status_code, r.text)
+        try:
+            return r.json()
+        except ValueError:
+            raise SigmaApiError(path, r.status_code, f"corpo não-JSON: {r.text}")
+
     # ---- endpoints mapeados (PANEL_MAP.md) -----------------------------------
 
     def me(self) -> dict:
@@ -255,6 +287,27 @@ class SigmaApiClient:
 
     def settings_public(self) -> dict:
         return self._get("/settings/public")
+
+    # ---- mutações (ciclo de vida validado no explore 07) ----------------------
+
+    def create_customer(self, payload: dict) -> dict | list:
+        """POST /customers — cria cliente. 201 {data:{id}}; 422 JSON nomeia
+        campos obrigatórios. Schema mínimo validado no 07: username, password,
+        password_confirmation, name, email, connections, server_id, package_id
+        (password: só letras/números/-/@/_)."""
+        return self._mutate("POST", "/customers", payload)
+
+    def update_customer(self, customer_id: str, payload: dict) -> dict | list:
+        """PUT /customers/{id} — edita; envie o payload completo (create) + mudanças."""
+        return self._mutate("PUT", f"/customers/{customer_id}", payload)
+
+    def resync_customer(self, customer_id: str) -> dict | list:
+        return self._mutate("POST", f"/customers/{customer_id}/resync", {})
+
+    def delete_customer(self, customer_id: str) -> dict | list:
+        """DELETE /customers/{id} — SOFT delete (resposta traz deleted_at;
+        restore existe em POST /customers/restore, ainda não testado)."""
+        return self._mutate("DELETE", f"/customers/{customer_id}")
 
 
 @contextmanager

@@ -27,7 +27,16 @@ class FakeSession:
         self.cookies = type("C", (), {"set": staticmethod(lambda *a, **k: None)})()
 
     def get(self, url, params=None, headers=None, timeout=None):
-        self.calls.append({"url": url, "headers": headers, "params": params})
+        self.calls.append({"url": url, "headers": headers, "params": params,
+                           "method": "GET", "json": None})
+        resp = self.responses.pop(0)
+        if isinstance(resp, Exception):
+            raise resp
+        return resp
+
+    def request(self, method, url, json=None, headers=None, timeout=None):
+        self.calls.append({"url": url, "headers": headers, "params": None,
+                           "method": method, "json": json})
         resp = self.responses.pop(0)
         if isinstance(resp, Exception):
             raise resp
@@ -122,3 +131,49 @@ def test_is_dns_failure():
     assert _is_dns_failure(Exception("Name or service not known"))
     assert _is_dns_failure(Exception("Temporary failure in name resolution"))
     assert not _is_dns_failure(Exception("connection refused"))
+
+
+# ---- mutações (port do 07) ---------------------------------------------------
+
+def test_create_customer_envia_payload_e_headers_axios(client):
+    client._session.responses = [FakeResponse(201, {"data": {"id": "ABC123xYz"}})]
+    payload = {"username": "zz_test", "server_id": 1, "package_id": 2}
+    client.create_customer(payload)
+    call = client._session.calls[0]
+    assert call["method"] == "POST" and call["url"].endswith("/api/customers")
+    assert call["json"] == payload
+    # sem os headers axios o Laravel responde 302→HTML 200 (parece sucesso)
+    assert call["headers"]["Accept"] == "application/json"
+    assert call["headers"]["X-Requested-With"] == "XMLHttpRequest"
+    assert call["headers"]["Content-Type"] == "application/json"
+    assert call["headers"]["Authorization"] == "Bearer TEST|token"
+
+
+def test_update_resync_delete_montam_url_do_id(client):
+    client._session.responses = [
+        FakeResponse(200, {"ok": 1}),   # PUT
+        FakeResponse(200, {"ok": 1}),   # resync
+        FakeResponse(200, {"deleted_at": "2026-09-30"}),  # DELETE
+    ]
+    client.update_customer("ABC123xYz", {"name": "novo"})
+    client.resync_customer("ABC123xYz")
+    client.delete_customer("ABC123xYz")
+    assert client._session.calls[0]["method"] == "PUT"
+    assert client._session.calls[0]["url"].endswith("/api/customers/ABC123xYz")
+    assert client._session.calls[1]["method"] == "POST"
+    assert client._session.calls[1]["url"].endswith("/customers/ABC123xYz/resync")
+    assert client._session.calls[2]["method"] == "DELETE"
+
+
+def test_mutacao_nao_2xx_levanta_erro(client):
+    client._session.responses = [FakeResponse(
+        422, text='{"errors": {"server_id": ["The server id field is required."]}}')]
+    with pytest.raises(SigmaApiError) as e:
+        client.create_customer({"username": "zz_test"})
+    assert e.value.status == 422
+
+
+def test_mutacao_corpo_nao_json_levanta_erro(client):
+    client._session.responses = [FakeResponse(200, text="<html>spa</html>")]
+    with pytest.raises(SigmaApiError, match="não-JSON"):
+        client.delete_customer("ABC123xYz")
