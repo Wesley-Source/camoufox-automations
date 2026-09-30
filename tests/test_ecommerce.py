@@ -1,4 +1,4 @@
-from core.scrapers.ecommerce_x import sync_product
+from core.ecommerce_x.scraper import sync_product
 
 
 def test_sync_product_retorna_estrutura_esperada():

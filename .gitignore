@@ -18,4 +18,10 @@ logs/
 
 # Pytest
 .pytest_cache/
+
+# Sessões e capturas de exploração (contêm token/PII)
 sigma_session.json
+core/*/explore/out/
+
+# Grafo gerado
+graphify-out/

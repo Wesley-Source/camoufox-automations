@@ -1,4 +1,4 @@
-from interfaces.mcp_server import mcp_app
+from interfaces.mcp.server import mcp_app
 from interfaces.cli import cli_app
 from core.database import init_db
 import sys
