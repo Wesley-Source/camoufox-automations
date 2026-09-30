@@ -106,14 +106,14 @@ def main(
         typer.secho(f"✖ {MAP_FILE} não existe — rode o 02_dashboard_map.py antes.", fg=typer.colors.RED)
         raise typer.Exit(1)
 
-    routes = sorted(json.loads(MAP_FILE.read_text(encoding="utf-8"))["routes"])
-    allowed = [r for r in routes if not BLOCKLIST.search(r)]
-    skipped_bl = [r for r in routes if BLOCKLIST.search(r)]
+    route_map = json.loads(MAP_FILE.read_text(encoding="utf-8"))["routes"]
+    allowed = sorted(r for r in route_map if not BLOCKLIST.search(r))
+    skipped_bl = sorted(r for r in route_map if BLOCKLIST.search(r))
     ROUTES_OUT.mkdir(parents=True, exist_ok=True)
 
-    typer.echo(f"{len(routes)} rotas no mapa | {len(skipped_bl)} na blocklist | {len(allowed)} liberadas")
+    typer.echo(f"{len(route_map)} rotas no mapa | {len(skipped_bl)} na blocklist | {len(allowed)} liberadas")
     todo = [
-        (r, routes[r]) for r in allowed
+        (r, route_map[r]) for r in allowed
         if not (ROUTES_OUT / f"{slug_for(r)}.json").exists()
     ][:max_routes]
     if not todo:
