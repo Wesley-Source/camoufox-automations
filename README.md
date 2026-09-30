@@ -1,0 +1,143 @@
+# Camoufox Automations
+
+Hub de automações de web scraping e gestão de painéis, construído para ser
+operado **por humanos e por agentes de IA** (Hermes, OpenCode, MCP clients).
+Navegador furtivo (Camoufox), ELT em SQLite, CLI Typer e MCP FastMCP —
+uma pasta por site automatizado.
+
+> **Você é uma IA lendo isto?** Comece pela seção [Regras de Ouro](#regras-de-ouro-para-ia)
+> e pela [Tabela de Automações](#inventário-de-automações). Elas resumem o que
+> você pode fazer, como fazer e o que **nunca** fazer.
+
+---
+
+## Regras de Ouro para IA
+
+Este projeto manipula um **painel de produção com clientes reais** (Sigma
+IPTV). A segurança não é sugerida — é arquitetural:
+
+1. **Read-only é o padrão.** Escrita só por método nomeado e explícito
+   (`create_customer`, `update_customer`...). Não existe método genérico de
+   POST/PUT/DELETE na API client — e não crie um.
+2. **Guard antes de explorar.** Todo script exploratório instala
+   `explore/_guard.py` (aborta POST/PUT/PATCH/DELETE no nível do browser).
+   Mutações intencionais usam o guardião de URL do `07` (allowlist de ID).
+3. **Snapshot antes e depois de qualquer escrita.**
+   `06_customers_snapshot.py` + diff. Zero divergências além do cliente teste
+   é a definição de sucesso.
+4. **Só clientes de teste.** Nomes `zz_test_*` inconfundíveis, criados e
+   **excluídos** no mesmo run. Nunca mutar cliente real — nem "só um pouquinho".
+5. **Destructive pede flag.** `sigma-customer-delete` exige `--yes`; MCP
+   `excluir_cliente_sigma` exige `confirmar=True`. Não contorne.
+6. **Endpoints em blocklist permanente** (não usar sem aprovação explícita do
+   dono): `mass-delete`, `move`, `migration`, BotBot/mensagens, rotas de
+   financeiro. O inventário os marca como `blocked`.
+7. **PII nunca sai do `out/`.** Snapshots, capturas e sessões ficam em
+   diretórios gitignored. Nunca commite token, cookie ou dado de cliente.
+
+### Fatos técnicos que vão te poupar horas (já descobertos à moda antiga)
+
+| Fato | Detalhe |
+|---|---|
+| Transporte | Cloudflare bloqueia `requests` (fingerprint TLS) e o `context.request` do Playwright (DNS morre no Node). **Único caminho: `fetch` dentro da página** via `page.evaluate` — usa o DoH do browser + TLS real do Firefox. `open_client()` entrega isso pronto. |
+| DNS | A máquina não resolve `*.sigma.st` (só via DoH). O browser já nasce com Google DoH (`core/browser.py`); o motor `requests` tem adapter DoH embutido (só serve p/ testes). |
+| Headers de mutação | Sem `Accept: application/json` + `X-Requested-With: XMLHttpRequest` o Laravel responde validação com **302→HTML status 200** (parece sucesso, não fez nada). Já estão no `_AXIOS_HEADERS`. |
+| Paginação | O param `per_page` (snake_case) é **silenciosamente ignorado**; use `perPage` (camelCase), cap 100. |
+| Expiração | Campo canônico é `expires_at` ISO (`2026-11-04T02:59:59.000000Z` — painel fixo UTC-3; 02:59:59Z = 23:59:59 local). `expiry_date`/`due_date` são legados. |
+| IDs | São **strings** do painel (`2YD0JXlv1Q`), não ints. |
+| Sessão | Token Laravel `id\|hash`, sem expiração client-side; validade = `GET /api/auth/me` 200. Reuso automático via `ensure_logged_page`. |
+| Soft delete | `DELETE /customers/{id}` é soft (volta `deleted_at`); restore existe mas nunca foi testado. |
+| Listagem | `GET /customers/{id}` **não existe** (404 HTML). Para detalhes: `resync` ou buscar na lista paginada (`find_customer`). |
+| VPS/máquina | Shell wrapper `rtk` pede `bash -c "..."` para comandos encadeados; git identity inline nos commits; `graphify` reconstrói o grafo a cada commit (hook). |
+
+---
+
+## Estrutura (uma pasta por site)
+
+```
+core/
+  automations.py        # INVENTÁRIO — fonte única (CLI/MCP/README leem daqui)
+  browser.py            # Camoufox headless virtual + Google DoH hardcoded
+  database.py           # SQLite: raw_snapshots, products, panel_entities (UPSERT)
+  sigma/                # SITE: painel Sigma IPTV (lideriptv.sigma.st)
+    auth.py             #   login, sessão, reuso/validade de token
+    api.py              #   SigmaApiClient (GET whitelist + 4 mutações nomeadas)
+    scraper.py          #   sync_* (ELT: fetch → raw → panel_entities)
+    explore/            #   scripts de descoberta (dev, mantêm o mapa vivo)
+      _guard.py         #     kill switch de rede (aborta mutação)
+      01..07_*.py       #     sessão, mapa, crawl, probe, crudmap, snapshot, lifecycle
+      PANEL_MAP.md      #     MAPA CANÔNICO do painel (endpoints, schema, descobertas)
+      out/              #     capturas (GITIGNORED — PII)
+  ecommerce_x/          # SITE: placeholder httpbin (padrão para o próximo site)
+    scraper.py
+    explore/
+interfaces/
+  cli/                  # Typer: __init__ (hub+automations), sigma.py, ecommerce.py
+  mcp/                  # FastMCP: server.py (hub), sigma.py, ecommerce.py
+tests/                  # pytest (20 testes; sem deps novas — fakes na mão)
+main.py                 # `main.py` = CLI | `main.py mcp` = servidor MCP
+```
+
+## Setup
+
+```bash
+python3 -m venv venv && venv/bin/pip install -r requirements.txt
+venv/bin/camoufox fetch                  # baixa o browser (~1x)
+pytest tests/                            # deve passar 20/20
+# credenciais (só em env, nunca em arquivo commitado):
+export SIGMA_USERNAME=... SIGMA_PASSWORD=...
+venv/bin/python main.py sigma-login --save   # gera sigma_session.json (gitignored)
+```
+
+## Como a IA deve operar (receita)
+
+1. **Descobrir o que existe** → `main.py automations` (ou tool MCP
+   `listar_automacoes`). Status `ok` = pode usar direto; `planned` = endpoint
+   mapeado, falta fiação; `blocked` = precisa de aprovação humana explícita.
+2. **Ler o mapa antes de tocar** → `core/sigma/explore/PANEL_MAP.md` tem
+   endpoints, schemas e pegadinhas por seção do painel.
+3. **Sincronizar dados** → `sigma-sync --what all --pages 5` (banco local
+   sempre; UPSERT idempotente, pode rodar quantas vezes quiser).
+4. **Criar/editar/excluir cliente** → comandos `sigma-customer-*` / tools MCP.
+   Antes: snapshot (06). Depois: snapshot + diff = zero. Cliente de teste só
+   com nome `zz_test_*`, excluído no mesmo run.
+5. **Explorar área nova do painel** → seguir o padrão dos exploradores:
+   guard ligado, blocklist de seções sensíveis, `--max` pequeno, um commit por
+   script, achados documentados no PANEL_MAP.md.
+6. **Adicionar automação** → núcleo em `core/<site>/`, comando em
+   `interfaces/cli/<site>.py`, tool em `interfaces/mcp/<site>.py`, teste em
+   `tests/`, **e uma linha no `core/automations.py`**. Commit pequeno por passo.
+
+## Inventário de automações
+
+Fonte viva: `core/automations.py` (este espelho pode envelhecer; o comando
+`automations` nunca envelhece). Resumo:
+
+| Status | Qtd | Exemplos |
+|---|---|---|
+| `ok` | 20 | login, sync (customers/expiring/dashboard/resellers/statistics/all), status, CRUD de cliente (create/update/delete/resync), 7 exploradores, demo ecommerce |
+| `planned` | 6 | servers+packages, notices, top10, ai-analysis, export CSV, restore |
+| `blocked` | 3 | BotBot/mensagens, bulk (mass-delete/move/migration), financeiro |
+
+## Interfaces
+
+**CLI** (`venv/bin/python main.py <comando>`): `automations`, `sigma-login`,
+`sigma-sync`, `sigma-status`, `sigma-customer-create|update|delete|resync`,
+`sync-item`. MCP (`main.py mcp`): `listar_automacoes`, `login_sigma`,
+`sincronizar_sigma`, `status_sigma`, `criar_cliente_sigma`,
+`editar_cliente_sigma`, `excluir_cliente_sigma`, `resync_cliente_sigma`,
+`consultar_e_sincronizar_produto`.
+
+## Conhecimento vivo (ordem de leitura para uma IA nova)
+
+1. `AGENTS.md` — hooks do grafo de conhecimento (graphify)
+2. `core/automations.py` — o que existe pra fazer
+3. `core/sigma/explore/PANEL_MAP.md` — como o painel funciona por dentro
+4. `graphify-out/` — grafo do código (`graphify query "..."`)
+5. Este README — as regras do jogo
+
+## Deploy (planejado)
+
+VPS + cron para `sigma-sync --what all` diário + alerta de clientes a vencer
+(dados já no banco; notifier é o que falta). Segundo site real substitui o
+placeholder `ecommerce_x` clonando o padrão de pastas do sigma.
