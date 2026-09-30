@@ -90,3 +90,34 @@ direta (`04_api_probe.py`), não a UI.
   determinística de router (hash+título), parada por anomalia
   (sign-in/5xx/Cloudflare), `--max N` por execução, resumível.
 - Sessão/PII em `out/` e `sigma_session.json` — gitignored.
+
+## CRUD de clientes (descoberto no 05+07, validado no cliente teste)
+
+Endpoints confirmados (chunk `customer-BPdT3J4I.js` + validação real):
+
+| Ação | Chamada | Resposta |
+|---|---|---|
+| Criar | `POST /api/customers` | `201 {data:{id,...}}` |
+| Editar/renovar | `PUT /api/customers/{id}` | `200` |
+| Resync no stream | `POST /api/customers/{id}/resync` | `200` |
+| Excluir | `DELETE /api/customers/{id}` | `200 {deleted_at}` — **soft delete** |
+| Restaurar | `POST /api/customers/restore` | `200` |
+| Calcular preço | `POST /api/customers/calculate-plan-price` | — |
+| Gerar credencial | `POST /api/customers/generate-credential` | — |
+
+- **Schema do create** (descoberto por 422 iterativo): `username`, `password`
+  (letras/números/`-`/`@`/`_`), `name`, `email`, `connections`, `server_id`,
+  `package_id` — pacote precisa pertencer ao servidor (`GET /api/servers`,
+  `GET /api/packages/list` com campo `server_id`).
+- **Headers obrigatórios em mutações**: `Accept: application/json` +
+  `X-Requested-With: XMLHttpRequest`. Sem eles o Laravel responde validação
+  com **redirect → HTML da SPA com 200** (fetch segue o 302) em vez de 422 JSON.
+- Busca `?username=` da lista não é confiável para descoberta — listar com
+  `perPage=500` e filtrar local.
+- Exclusão em massa (`POST /customers/mass-delete`), mover reseller
+  (`/customers/move`), migração (`/servers/migrate-single-customer`) e
+  campanhas de recovery: **mapeados, nunca testados** (risco em massa).
+- Script validador: `07_test_client_lifecycle.py` — guardião de URL só
+  libera mutação no create ou no ID do teste; snapshot+diff antes/depois
+  (zero divergência exceto o teste entrando e saindo).
+
