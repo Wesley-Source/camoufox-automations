@@ -324,17 +324,36 @@ def find_customer(client, customer_id: str) -> dict | None:
 
 
 def customer_new_expiry(row: dict, add_days: int = 0, set_date: str = None) -> str | None:
-    """Nova expiry_date a partir do row atual (+ N dias ou data fixa)."""
+    """Nova expiração (YYYY-MM-DD) a partir do row atual (+ N dias ou data fixa)."""
     from datetime import datetime, timedelta
 
     if set_date:
         base = datetime.strptime(set_date, "%Y-%m-%d")
     else:
-        cur = row.get("expiry_date") or row.get("due_date")
+        cur = row.get("expiry_date") or row.get("expires_at") or row.get("due_date")
         if not cur:
             return None
         base = datetime.strptime(cur[:10], "%Y-%m-%d")
     return (base + timedelta(days=add_days)).strftime("%Y-%m-%d")
+
+
+def set_expiry_on_payload(row: dict, payload: dict, ymd: str):
+    """Grava a expiração na chave que o row usa. O campo canônico é
+    `expires_at` (ISO); painel fixo em UTC-3 — o renewal nativo grava
+    23:59:59 local = 02:59:59Z do dia seguinte. expiry_date/due_date são
+    variantes que ainda circulam em alguns rows."""
+    from datetime import datetime, timedelta
+
+    if "expiry_date" in row:
+        payload["expiry_date"] = ymd
+        payload.pop("due_date", None)
+    elif "expires_at" in row:
+        nxt = (datetime.strptime(ymd, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        payload["expires_at"] = f"{nxt}T02:59:59.000000Z"
+    elif "due_date" in row:
+        payload["due_date"] = ymd
+    else:
+        raise ValueError("row sem campo de expiração conhecido")
 
 
 @contextmanager

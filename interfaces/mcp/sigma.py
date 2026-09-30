@@ -2,7 +2,12 @@ import json
 import os
 import secrets
 
-from core.sigma.api import customer_new_expiry, find_customer, open_client
+from core.sigma.api import (
+    customer_new_expiry,
+    find_customer,
+    open_client,
+    set_expiry_on_payload,
+)
 from core.sigma.auth import login
 from core.sigma.scraper import SYNCERS, entities_summary, sync_all, sync_customers
 
@@ -70,14 +75,15 @@ def register(mcp):
     @mcp.tool()
     def criar_cliente_sigma(
         username: str,
-        package_id: int,
-        server_id: int,
+        package_id: str,
+        server_id: str,
         connections: int = 1,
         password: str = None,
     ) -> str:
         """
-        Cria um cliente no painel Sigma. package_id e server_id devem ser um par
-        coerente (o pacote pertence ao servidor). Senha gerada se não informada.
+        Cria um cliente no painel Sigma. package_id e server_id são IDs string
+        do painel (ex.: rdqLkQjWAE) e devem formar par coerente (o pacote
+        pertence ao servidor). Senha gerada se não informada.
         """
         pwd = password or secrets.token_urlsafe(12)
         payload = {
@@ -113,9 +119,8 @@ def register(mcp):
                 if add_days:
                     new_exp = customer_new_expiry(row, add_days)
                     if not new_exp:
-                        return "Row sem expiry_date — não dá para estender."
-                    payload["expiry_date"] = new_exp
-                    payload.pop("due_date", None)
+                        return "Row sem data de expiração — não dá para estender."
+                    set_expiry_on_payload(row, payload, new_exp)
                 client.update_customer(customer_id, payload)
         except Exception as e:
             return f"Update falhou: {e}"

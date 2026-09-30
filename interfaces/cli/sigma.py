@@ -5,7 +5,12 @@ import secrets
 import typer
 
 from core.sigma.auth import SESSION_FILE, login
-from core.sigma.api import customer_new_expiry, find_customer, open_client
+from core.sigma.api import (
+    customer_new_expiry,
+    find_customer,
+    open_client,
+    set_expiry_on_payload,
+)
 from core.sigma.scraper import (
     SYNCERS,
     entities_summary,
@@ -78,8 +83,8 @@ def register(app: typer.Typer):
     @app.command("sigma-customer-create")
     def cli_sigma_customer_create(
         username: str = typer.Option(..., help="Username do cliente no painel."),
-        package_id: int = typer.Option(..., help="ID do pacote (ver painel ou GET /packages/list)."),
-        server_id: int = typer.Option(..., help="ID do servidor (deve casar com o do pacote)."),
+        package_id: str = typer.Option(..., help="ID do pacote (ex.: rdqLkQjWAE; ver GET /packages/list)."),
+        server_id: str = typer.Option(..., help="ID do servidor (deve casar com o do pacote)."),
         name: str = typer.Option(None, help="Nome (padrão: username)."),
         email: str = typer.Option(None, help="Email (padrão: {username}@local.test)."),
         connections: int = typer.Option(1, help="Nº de conexões."),
@@ -121,13 +126,13 @@ def register(app: typer.Typer):
                 payload = dict(row)
                 if note:
                     payload["note"] = note
-                new_exp = customer_new_expiry(row, add_days, set_expiry) if (add_days or set_expiry) else None
+                new_exp = None
                 if add_days or set_expiry:
+                    new_exp = customer_new_expiry(row, add_days, set_expiry)
                     if not new_exp:
-                        typer.secho("✖ Row sem expiry_date — use --set-expiry.", fg=typer.colors.RED)
+                        typer.secho("✖ Row sem data de expiração — use --set-expiry.", fg=typer.colors.RED)
                         raise typer.Exit(1)
-                    payload["expiry_date"] = new_exp
-                    payload.pop("due_date", None)
+                    set_expiry_on_payload(row, payload, new_exp)
                 res = client.update_customer(customer_id, payload)
         except typer.Exit:
             raise
