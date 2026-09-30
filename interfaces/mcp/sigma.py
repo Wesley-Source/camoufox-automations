@@ -1,9 +1,10 @@
 import json
 import os
+import secrets
 
-from core.sigma.api import open_client
+from core.sigma.api import customer_new_expiry, find_customer, open_client
 from core.sigma.auth import login
-from core.sigma.scraper import SYNCERS, entities_summary, sync_all
+from core.sigma.scraper import SYNCERS, entities_summary, sync_all, sync_customers
 
 
 def register(mcp):
@@ -34,7 +35,12 @@ def register(mcp):
             return f"'o_que' inválido: {o_que}. Opções: {', '.join([*SYNCERS, 'all'])}"
         try:
             with open_client() as client:
-                results = sync_all(client, paginas) if o_que == "all" else [SYNCERS[o_que](client, paginas)]
+                if o_que == "all":
+                    results = sync_all(client, paginas)
+                elif o_que == "customers":
+                    results = [sync_customers(client, paginas)]
+                else:
+                    results = [SYNCERS[o_que](client)]
         except Exception as e:
             return f"Sync Sigma falhou: {e}"
         return json.dumps(results, ensure_ascii=False)
@@ -58,3 +64,84 @@ def register(mcp):
             },
             ensure_ascii=False,
         )
+
+    # ---- gestão de clientes (mutações; 4 operações curated, sem bulk) ----------
+
+    @mcp.tool()
+    def criar_cliente_sigma(
+        username: str,
+        package_id: int,
+        server_id: int,
+        connections: int = 1,
+        password: str = None,
+    ) -> str:
+        """
+        Cria um cliente no painel Sigma. package_id e server_id devem ser um par
+        coerente (o pacote pertence ao servidor). Senha gerada se não informada.
+        """
+        pwd = password or secrets.token_urlsafe(12)
+        payload = {
+            "username": username, "password": pwd, "password_confirmation": pwd,
+            "name": username, "email": f"{username}@local.test",
+            "connections": connections, "server_id": server_id, "package_id": package_id,
+        }
+        try:
+            with open_client() as client:
+                res = client.create_customer(payload)
+        except Exception as e:
+            return f"Create falhou: {e}"
+        cid = (res.get("data") or {}).get("id") if isinstance(res, dict) else None
+        return json.dumps({"criado": username, "id": cid or "?", "senha": pwd}, ensure_ascii=False)
+
+    @mcp.tool()
+    def editar_cliente_sigma(customer_id: str, note: str = None, add_days: int = 0) -> str:
+        """
+        Edita um cliente do painel Sigma: altera a nota e/ou estende a expiração
+        em add_days dias. Ao menos um dos dois deve ser informado.
+        """
+        if not (note or add_days):
+            return "Nada a mudar: informe note e/ou add_days."
+        try:
+            with open_client() as client:
+                row = find_customer(client, customer_id)
+                if not row:
+                    return f"Cliente {customer_id} não encontrado."
+                payload = dict(row)
+                if note:
+                    payload["note"] = note
+                new_exp = None
+                if add_days:
+                    new_exp = customer_new_expiry(row, add_days)
+                    if not new_exp:
+                        return "Row sem expiry_date — não dá para estender."
+                    payload["expiry_date"] = new_exp
+                    payload.pop("due_date", None)
+                client.update_customer(customer_id, payload)
+        except Exception as e:
+            return f"Update falhou: {e}"
+        return json.dumps({"id": customer_id, "nota": note, "expira": new_exp}, ensure_ascii=False)
+
+    @mcp.tool()
+    def excluir_cliente_sigma(customer_id: str, confirmar: bool = False) -> str:
+        """
+        Remove um cliente do painel Sigma (SOFT delete, restaurável).
+        DESTRUTIVO: exige confirmar=True além do ID correto.
+        """
+        if not confirmar:
+            return "Exclusão exige confirmar=True (soft delete)."
+        try:
+            with open_client() as client:
+                res = client.delete_customer(customer_id)
+        except Exception as e:
+            return f"Delete falhou: {e}"
+        return json.dumps({"id": customer_id, "resposta": res}, ensure_ascii=False)
+
+    @mcp.tool()
+    def resync_cliente_sigma(customer_id: str) -> str:
+        """Força o resync do cliente no servidor IPTV do painel Sigma."""
+        try:
+            with open_client() as client:
+                res = client.resync_customer(customer_id)
+        except Exception as e:
+            return f"Resync falhou: {e}"
+        return json.dumps({"id": customer_id, "resposta": res}, ensure_ascii=False)

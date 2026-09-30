@@ -1,44 +1,17 @@
 import json
 import os
 import secrets
-from datetime import datetime, timedelta
 
 import typer
 
 from core.sigma.auth import SESSION_FILE, login
-from core.sigma.api import open_client
+from core.sigma.api import customer_new_expiry, find_customer, open_client
 from core.sigma.scraper import (
     SYNCERS,
     entities_summary,
     sync_all,
     sync_customers,
 )
-
-
-def _find_customer(client, customer_id: str) -> dict | None:
-    """Procura o cliente pelo id paginando a lista (perPage=100)."""
-    page = 1
-    while True:
-        resp = client.customers(page=page)
-        rows = resp.get("data", [])
-        for row in rows:
-            if row.get("id") == customer_id:
-                return row
-        meta = resp.get("meta", {})
-        if page >= meta.get("last_page", 1):
-            return None
-        page += 1
-
-
-def _new_expiry(row: dict, add_days: int, set_date: str | None) -> str | None:
-    if set_date:
-        base = datetime.strptime(set_date, "%Y-%m-%d")
-    else:
-        cur = row.get("expiry_date") or row.get("due_date")
-        if not cur:
-            return None
-        base = datetime.strptime(cur[:10], "%Y-%m-%d")
-    return (base + timedelta(days=add_days)).strftime("%Y-%m-%d")
 
 
 def register(app: typer.Typer):
@@ -141,14 +114,14 @@ def register(app: typer.Typer):
             raise typer.Exit(1)
         try:
             with open_client() as client:
-                row = _find_customer(client, customer_id)
+                row = find_customer(client, customer_id)
                 if not row:
                     typer.secho(f"✖ Cliente {customer_id} não encontrado na lista.", fg=typer.colors.RED)
                     raise typer.Exit(1)
                 payload = dict(row)
                 if note:
                     payload["note"] = note
-                new_exp = _new_expiry(row, add_days, set_expiry) if (add_days or set_expiry) else None
+                new_exp = customer_new_expiry(row, add_days, set_expiry) if (add_days or set_expiry) else None
                 if add_days or set_expiry:
                     if not new_exp:
                         typer.secho("✖ Row sem expiry_date — use --set-expiry.", fg=typer.colors.RED)

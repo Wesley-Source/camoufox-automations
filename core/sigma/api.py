@@ -310,6 +310,33 @@ class SigmaApiClient:
         return self._mutate("DELETE", f"/customers/{customer_id}")
 
 
+def find_customer(client, customer_id: str) -> dict | None:
+    """Procura o cliente pelo id paginando /customers (perPage=100)."""
+    page = 1
+    while True:
+        resp = client.customers(page=page)
+        for row in resp.get("data", []):
+            if row.get("id") == customer_id:
+                return row
+        if page >= resp.get("meta", {}).get("last_page", 1):
+            return None
+        page += 1
+
+
+def customer_new_expiry(row: dict, add_days: int = 0, set_date: str = None) -> str | None:
+    """Nova expiry_date a partir do row atual (+ N dias ou data fixa)."""
+    from datetime import datetime, timedelta
+
+    if set_date:
+        base = datetime.strptime(set_date, "%Y-%m-%d")
+    else:
+        cur = row.get("expiry_date") or row.get("due_date")
+        if not cur:
+            return None
+        base = datetime.strptime(cur[:10], "%Y-%m-%d")
+    return (base + timedelta(days=add_days)).strftime("%Y-%m-%d")
+
+
 @contextmanager
 def open_client(session_path: str = "sigma_session.json", proxy: str = None):
     """
