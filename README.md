@@ -46,6 +46,7 @@ IPTV). A segurança não é sugerida — é arquitetural:
 | Expiração | Campo canônico é `expires_at` ISO (`2026-11-04T02:59:59.000000Z` — painel fixo UTC-3; 02:59:59Z = 23:59:59 local). `expiry_date`/`due_date` são legados. |
 | IDs | São **strings** do painel (`2YD0JXlv1Q`), não ints. |
 | Sessão | Token Laravel `id\|hash`, sem expiração client-side; validade = `GET /api/auth/me` 200. Reuso automático via `ensure_logged_page`. |
+| Proxy | `SIGMA_PROXY` (ex. `socks5://100.x.y.z:1080`) vira o proxy padrão de todo acesso Sigma (`open_client`/`ensure_logged_page`). Útil p/ rota dedicada (Tailscale+microsocks). **`cf_clearance` é IP-bound**: escolha o caminho ANTES do primeiro login e não troque — senão refaça `sigma-login --save`. |
 | Soft delete | `DELETE /customers/{id}` é soft (volta `deleted_at`); restore existe mas nunca foi testado. |
 | Listagem | `GET /customers/{id}` **não existe** (404 HTML). Para detalhes: `resync` ou buscar na lista paginada (`find_customer`). |
 | VPS/máquina | Shell wrapper `rtk` pede `bash -c "..."` para comandos encadeados; git identity inline nos commits; `graphify` reconstrói o grafo a cada commit (hook). |
