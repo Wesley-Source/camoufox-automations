@@ -1,0 +1,107 @@
+"""
+Inventário central de automações do hub — fonte única de verdade.
+
+Consumido por: CLI (`automations`), MCP (`listar_automacoes`) e README.
+Ao adicionar uma automação nova (CLI, MCP ou script), adicione UMA linha
+aqui. `status`:
+  ok      — pronta e testada; `run` mostra como executar
+  planned — endpoint mapeado (PANEL_MAP.md) mas ainda sem fiação
+  blocked — existe no painel; exige aprovação explícita do dono (escrita
+            em clientes reais / destrutiva em massa)
+"""
+
+AUTOMATIONS = [
+    # ---- sigma: sessão e leitura ---------------------------------------------
+    {"id": "sigma.login", "site": "sigma", "kind": "auth", "status": "ok",
+     "what": "Login no painel (Cloudflare) e sessão salva com token+cookies",
+     "run": "main.py sigma-login --save (env SIGMA_USERNAME/SIGMA_PASSWORD)"},
+    {"id": "sigma.sync.customers", "site": "sigma", "kind": "sync", "status": "ok",
+     "what": "Sincroniza clientes (paginação perPage, cap 100/página)",
+     "run": "main.py sigma-sync --what customers --pages 5"},
+    {"id": "sigma.sync.expiring", "site": "sigma", "kind": "sync", "status": "ok",
+     "what": "Sincroniza clientes a vencer (base p/ alertas)",
+     "run": "main.py sigma-sync --what expiring"},
+    {"id": "sigma.sync.dashboard", "site": "sigma", "kind": "sync", "status": "ok",
+     "what": "Sincroniza 4 charts + métrica recovery do dashboard",
+     "run": "main.py sigma-sync --what dashboard"},
+    {"id": "sigma.sync.resellers", "site": "sigma", "kind": "sync", "status": "ok",
+     "what": "Sincroniza revendedores",
+     "run": "main.py sigma-sync --what resellers"},
+    {"id": "sigma.sync.statistics", "site": "sigma", "kind": "sync", "status": "ok",
+     "what": "Sincroniza estatísticas (minha árvore)",
+     "run": "main.py sigma-sync --what statistics"},
+    {"id": "sigma.sync.all", "site": "sigma", "kind": "sync", "status": "ok",
+     "what": "Sync completo de todos os datasets acima",
+     "run": "main.py sigma-sync --what all --pages 5"},
+    {"id": "sigma.status", "site": "sigma", "kind": "status", "status": "ok",
+     "what": "Validade do token, expiração do painel e contagens do banco local",
+     "run": "main.py sigma-status"},
+    # ---- sigma: gestão de clientes (CRUD) ------------------------------------
+    {"id": "sigma.customer.create", "site": "sigma", "kind": "crud", "status": "ok",
+     "what": "Cria cliente (payload mínimo; 422 preenche iterativamente)",
+     "run": "main.py sigma-customer-create --username X --package-id P --server-id S"},
+    {"id": "sigma.customer.update", "site": "sigma", "kind": "crud", "status": "ok",
+     "what": "Edita nota e/ou estende expiração (+dias ou data)",
+     "run": "main.py sigma-customer-update ID --note '...' --add-days 30"},
+    {"id": "sigma.customer.delete", "site": "sigma", "kind": "crud", "status": "ok",
+     "what": "Soft-delete de cliente (restaurável; exige --yes)",
+     "run": "main.py sigma-customer-delete ID --yes"},
+    {"id": "sigma.customer.resync", "site": "sigma", "kind": "crud", "status": "ok",
+     "what": "Força resync no painel; retorna a linha COMPLETA do cliente",
+     "run": "main.py sigma-customer-resync ID"},
+    # ---- sigma: exploradores (desenvolvimento; mantêm o mapa vivo) ------------
+    {"id": "sigma.explore.session", "site": "sigma", "kind": "explore", "status": "ok",
+     "what": "Sessão fresca + inventário passivo de GETs do dashboard",
+     "run": "venv/bin/python core/sigma/explore/01_session.py"},
+    {"id": "sigma.explore.map", "site": "sigma", "kind": "explore", "status": "ok",
+     "what": "Mapa de rotas/tabelas/screenshot do dashboard (sem cliques)",
+     "run": "venv/bin/python core/sigma/explore/02_dashboard_map.py"},
+    {"id": "sigma.explore.crawl", "site": "sigma", "kind": "explore", "status": "ok",
+     "what": "Crawleo read-only das rotas do mapa (guard + blocklist + --max 5)",
+     "run": "venv/bin/python core/sigma/explore/03_route_crawl.py"},
+    {"id": "sigma.explore.probe", "site": "sigma", "kind": "explore", "status": "ok",
+     "what": "Probe de endpoints GET via fetch no browser",
+     "run": "venv/bin/python core/sigma/explore/04_api_probe.py"},
+    {"id": "sigma.explore.crudmap", "site": "sigma", "kind": "explore", "status": "ok",
+     "what": "BFS nos chunks JS do SPA: mapa de endpoints de mutação",
+     "run": "venv/bin/python core/sigma/explore/05_crud_endpoints.py"},
+    {"id": "sigma.explore.snapshot", "site": "sigma", "kind": "explore", "status": "ok",
+     "what": "Tripwire: snapshot de todos os clientes + diff (rodar antes/depois de escrita)",
+     "run": "venv/bin/python core/sigma/explore/06_customers_snapshot.py"},
+    {"id": "sigma.explore.lifecycle", "site": "sigma", "kind": "explore", "status": "ok",
+     "what": "Ciclo de vida completo de um cliente zz_test_explorer_* (guardião de URL)",
+     "run": "venv/bin/python core/sigma/explore/07_test_client_lifecycle.py"},
+    # ---- sigma: mapeado, ainda sem fiação -------------------------------------
+    {"id": "sigma.servers_packages.sync", "site": "sigma", "kind": "sync", "status": "planned",
+     "what": "Catálogo de servers (5) e packages (128) — valida par p/ create",
+     "run": "endpoints GET /servers e /packages/list (ver PANEL_MAP.md)"},
+    {"id": "sigma.notices.sync", "site": "sigma", "kind": "sync", "status": "planned",
+     "what": "Avisos/notificações do painel",
+     "run": "endpoint GET /api/notices/list"},
+    {"id": "sigma.customers.top10", "site": "sigma", "kind": "sync", "status": "planned",
+     "what": "Top 10 clientes por período (relatórios)",
+     "run": "endpoint GET /api/customers/statistics/top10?from_date&to_date"},
+    {"id": "sigma.dashboard.ai", "site": "sigma", "kind": "sync", "status": "planned",
+     "what": "Análise de IA do dashboard",
+     "run": "endpoint GET /api/dashboard/ai-analysis"},
+    {"id": "sigma.customers.export", "site": "sigma", "kind": "ops", "status": "planned",
+     "what": "Export CSV de todos os clientes (backup)",
+     "run": "endpoint GET /api/customers/export"},
+    {"id": "sigma.customer.restore", "site": "sigma", "kind": "crud", "status": "planned",
+     "what": "Restaura soft-delete",
+     "run": "endpoint POST /api/customers/restore (nunca testado)"},
+    # ---- sigma: exige aprovação explícita -------------------------------------
+    {"id": "sigma.botbot", "site": "sigma", "kind": "messaging", "status": "blocked",
+     "what": "BotBot/recovery campaigns — ENVIA mensagens a clientes reais",
+     "run": "endpoints mapeados no 05; NÃO usar sem aprovação"},
+    {"id": "sigma.bulk", "site": "sigma", "kind": "crud", "status": "blocked",
+     "what": "mass-delete / move / migration em lote — destrutivo em massa",
+     "run": "endpoints mapeados no 05; NÃO usar sem aprovação"},
+    {"id": "sigma.finance", "site": "sigma", "kind": "explore", "status": "blocked",
+     "what": "Rotas de financeiro/billing (blocklist do crawl; nunca visitadas)",
+     "run": "precisa de explorador read-only dedicado aprovado"},
+    # ---- ecommerce_x (placeholder httpbin; padrão para o próximo site) --------
+    {"id": "ecommerce.sync", "site": "ecommerce_x", "kind": "sync", "status": "ok",
+     "what": "Demo de sincronização de produto (httpbin) + teste de regressão",
+     "run": "main.py sync-item ID"},
+]
