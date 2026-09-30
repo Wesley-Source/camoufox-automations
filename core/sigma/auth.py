@@ -146,7 +146,7 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
 
     saved = load_session(session_path)
     if saved:
-        with BrowserEngine.get_page(proxy) as page:
+        with BrowserEngine.get_page(proxy or default_proxy()) as page:
             captured: list = []
             _attach_api_monitor(page, captured)
             _restore_session(page, saved)
@@ -169,7 +169,7 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
             "ou rode: venv/bin/python main.py sigma-login --save"
         )
 
-    with logged_page(username, password, proxy, guard) as s:
+    with logged_page(username, password, proxy or default_proxy(), guard) as s:
         save_session(
             {
                 "token": s.token,
@@ -185,6 +185,15 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
             page=s.page, token=s.token, captured=s.captured,
             blocked=s.blocked, reused=False,
         )
+
+
+def default_proxy() -> str | None:
+    """SIGMA_PROXY (ex.: socks5://100.x.y.z:1080 do microsocks no celular).
+
+    ponytail: proxy cirúrgico — só o Sigma passa pelo caminho alternativo;
+    todo o resto da máquina segue a rota normal.
+    """
+    return os.environ.get("SIGMA_PROXY") or None
 
 
 @contextmanager

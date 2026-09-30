@@ -25,6 +25,7 @@ from core.sigma.auth import (
     SIGMA_API,
     SIGMA_URL,
     ensure_logged_page,
+    default_proxy,
     load_session,
 )
 
@@ -364,7 +365,12 @@ def open_client(session_path: str = "sigma_session.json", proxy: str = None):
     Abre o browser com a sessão salva (reutiliza se válida, senão refaz
     login), injeta cookies no contexto e devolve o client. As chamadas
     /api/* passam pelo TLS real do Firefox sem renderizar página.
+
+    proxy: se None, usa SIGMA_PROXY do ambiente (ex. Termux+microsocks
+    via Tailscale: socks5://100.x.y.z:1080). cf_clearance é IP-bound —
+    mantenha o caminho estável depois do primeiro login.
     """
-    with ensure_logged_page(session_path=session_path, proxy=proxy) as s:
+    with ensure_logged_page(session_path=session_path,
+                            proxy=proxy or default_proxy()) as s:
         transport = _BrowserTransport(s.page, extra_headers=_AXIOS_HEADERS)
         yield SigmaApiClient(token=s.token, session_path=session_path, transport=transport)
