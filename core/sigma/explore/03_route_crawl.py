@@ -37,10 +37,16 @@ ROUTES_OUT = OUT / "routes"
 MAP_FILE = OUT / "dashboard_map.json"
 SETTLE_SECONDS = 8
 
-# ponytail: blocklist por regex de URL — apertar conforme o mapa real aparecer
+# ponytail: blocklist conservadora pós-mapa do 02 — tudo que é formulário,
+# ferramenta de mutação, configuração ou messaging fica fora; liberar rota a
+# rota depois de revisar as capturas.
 BLOCKLIST = re.compile(
     r"setting|config|user|admin|billing|invoice|finance|payment|"
-    r"password|profile|api[-_]?key|token|reseller|notice",
+    r"password|profile|api[-_]?key|token|reseller|notice"
+    r"|sign[-_]?(out|up)|logout"                     # mataria a sessão
+    r"|credit|purchase|migrat|renew|integration|system"  # ferramentas/financeiro
+    r"|\bedit\b|/add|create|delete"                  # formulários de escrita
+    r"|botbot|message|reminder|ticket",              # messaging/envios
     re.I,
 )
 
