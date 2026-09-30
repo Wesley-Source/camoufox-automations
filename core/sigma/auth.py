@@ -103,11 +103,11 @@ def _restore_session(page, session: dict) -> None:
     )
 
 
-def _session_still_valid(page, captured: list) -> bool:
+def _session_still_valid(page, captured: list, token: str = "") -> bool:
     """
-    Validade decidida pelo SERVIDOR: o token (formato Laravel, id|hash) não
-    carrega expiração no cliente. Inválido = redireção pro sign-in ou
-    qualquer 401 em /api/* dentro da janela de observação.
+    Validade decidida pelo SERVIDOR: GET /api/auth/me com o token (200 = válido).
+    Complementos passivos: redireção pro sign-in, form de login renderizado
+    ou qualquer 401 em /api/* na janela de observação.
     """
     try:
         page.goto(SIGMA_URL, wait_until="domcontentloaded", timeout=60_000)
@@ -119,7 +119,13 @@ def _session_still_valid(page, captured: list) -> bool:
             return False
         if any("/api" in c["url"] and c["status"] == 401 for c in captured):
             return False
-        return True
+        # Checagem ativa e determinística (GET, read-only).
+        status = page.evaluate(
+            "async (t) => (await fetch('/api/auth/me',"
+            " {headers: {Authorization: 'Bearer ' + t}})).status",
+            token or "",
+        )
+        return status == 200
     except Exception:
         return False
 
@@ -144,7 +150,7 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
             captured: list = []
             _attach_api_monitor(page, captured)
             _restore_session(page, saved)
-            if _session_still_valid(page, captured):
+            if _session_still_valid(page, captured, saved["token"]):
                 blocked = guard(page) if guard else []
                 typer.secho(f"✔ Sessão reutilizada ({session_path}).", fg=typer.colors.GREEN)
                 yield SimpleNamespace(
