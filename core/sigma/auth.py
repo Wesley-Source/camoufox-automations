@@ -9,14 +9,22 @@ Fluxo de auth descoberto via recon do bundle JS (assets/ApiService-*.js):
 O login é feito via navegador (Camoufox) para passar no Cloudflare e capturar
 o cf_clearance; ao final devolvemos token + cookies + log de requests /api/*.
 """
+import json
+import os
+import time
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
+
+import typer
 
 from core.browser import BrowserEngine
 
 SIGMA_URL = "https://lideriptv.sigma.st"
 SIGMA_API = SIGMA_URL + "/api"
 _BODY_SNIPPET = 4000  # ponytail: guardamos só um trecho de cada response no log
+SESSION_FILE = "sigma_session.json"
+_VALIDATE_SETTLE = 8  # ponytail: janela p/ o SPA devolver 401 ou redirecionar; subir se o painel ficar mais lento
 
 
 def _attach_api_monitor(page, captured: list):
@@ -63,6 +71,110 @@ def _login_flow(page, username: str, password: str, captured: list):
         )
         detail = login_resp["response_body"] if login_resp else "sem resposta capturada"
         raise RuntimeError(f"Login Sigma falhou. Resposta: {detail}")
+
+
+def load_session(path: str = SESSION_FILE) -> dict | None:
+    """Sessão salva (token+cookies) ou None se ausente/corrompida/incompleta."""
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        s = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return s if s.get("token") and s.get("cookies") else None
+
+
+def save_session(sess: dict, path: str = SESSION_FILE) -> None:
+    Path(path).write_text(json.dumps(sess, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _restore_session(page, session: dict) -> None:
+    """Injeta cookies (cf_clearance incluído) + localStorage ANTES do SPA carregar."""
+    page.context.add_cookies(session["cookies"])
+    page.add_init_script(
+        """(data) => {
+            try {
+                for (const [k, v] of Object.entries(data)) localStorage.setItem(k, v);
+            } catch (e) {}
+        }""",
+        session.get("local_storage", {}),
+    )
+
+
+def _session_still_valid(page, captured: list) -> bool:
+    """
+    Validade decidida pelo SERVIDOR: o token (formato Laravel, id|hash) não
+    carrega expiração no cliente. Inválido = redireção pro sign-in ou
+    qualquer 401 em /api/* dentro da janela de observação.
+    """
+    try:
+        page.goto(SIGMA_URL, wait_until="domcontentloaded", timeout=60_000)
+        time.sleep(_VALIDATE_SETTLE)  # SPA usa websocket (Pusher) — networkidle nunca assenta
+        if "sign-in" in page.url:
+            return False
+        if any("/api" in c["url"] and c["status"] == 401 for c in captured):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+@contextmanager
+def ensure_logged_page(username: str = None, password: str = None, proxy: str = None,
+                       guard=None, session_path: str = SESSION_FILE):
+    """
+    Como logged_page, mas reutiliza a sessão salva se ainda válida.
+
+    Cascata: sessão válida → reutiliza | inválida/expirada → avisa e refaz
+    login (exigindo username/password ou env SIGMA_USERNAME/SIGMA_PASSWORD)
+    e atualiza o arquivo de sessão. Sempre imprime o que fez.
+    O namespace devolvido tem .reused: bool.
+    """
+    username = username or os.environ.get("SIGMA_USERNAME")
+    password = password or os.environ.get("SIGMA_PASSWORD")
+
+    saved = load_session(session_path)
+    if saved:
+        with BrowserEngine.get_page(proxy) as page:
+            captured: list = []
+            _attach_api_monitor(page, captured)
+            _restore_session(page, saved)
+            if _session_still_valid(page, captured):
+                blocked = guard(page) if guard else []
+                typer.secho(f"✔ Sessão reutilizada ({session_path}).", fg=typer.colors.GREEN)
+                yield SimpleNamespace(
+                    page=page, token=saved["token"], captured=captured,
+                    blocked=blocked, reused=True,
+                )
+                return
+
+    if saved:
+        typer.secho("⚠ Sessão salva inválida ou expirada — refazendo login...", fg=typer.colors.YELLOW)
+    else:
+        typer.secho(f"ℹ Sem sessão salva em {session_path} — logando...", fg=typer.colors.YELLOW)
+    if not (username and password):
+        raise RuntimeError(
+            "Sem sessão válida e sem credenciais. Defina SIGMA_USERNAME/SIGMA_PASSWORD "
+            "ou rode: venv/bin/python main.py sigma-login --save"
+        )
+
+    with logged_page(username, password, proxy, guard) as s:
+        save_session(
+            {
+                "token": s.token,
+                "cookies": s.page.context.cookies(),
+                "local_storage": s.page.evaluate(
+                    "() => Object.fromEntries(Object.entries(localStorage))"
+                ),
+            },
+            session_path,
+        )
+        typer.secho(f"✔ Login completo; sessão atualizada em {session_path}.", fg=typer.colors.GREEN)
+        yield SimpleNamespace(
+            page=s.page, token=s.token, captured=s.captured,
+            blocked=s.blocked, reused=False,
+        )
 
 
 @contextmanager
