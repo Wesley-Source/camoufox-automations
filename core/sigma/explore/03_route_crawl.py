@@ -155,4 +155,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)  # parseia --max/--delay mesmo rodando o arquivo direto
