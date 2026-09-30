@@ -98,7 +98,7 @@ def _restore_session(page, session: dict) -> None:
                 for (const [k, v] of Object.entries(data)) localStorage.setItem(k, v);
             } catch (e) {}
         }""",
-        session.get("local_storage", {}),
+        arg=session.get("local_storage", {}),
     )
 
 
