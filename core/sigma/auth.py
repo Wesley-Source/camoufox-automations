@@ -92,13 +92,14 @@ def save_session(sess: dict, path: str = SESSION_FILE) -> None:
 def _restore_session(page, session: dict) -> None:
     """Injeta cookies (cf_clearance incluído) + localStorage ANTES do SPA carregar."""
     page.context.add_cookies(session["cookies"])
+    storage = json.dumps(session.get("local_storage", {}))
+    # add_init_script não aceita argumentos nesta versão do Playwright —
+    # embutimos o JSON no corpo (dados nossos, não input externo).
+    # Concatenação pura: f-string aqui é armadilha de {{ }} em JS.
     page.add_init_script(
-        """(data) => {
-            try {
-                for (const [k, v] of Object.entries(data)) localStorage.setItem(k, v);
-            } catch (e) {}
-        }""",
-        arg=session.get("local_storage", {}),
+        "(() => { try { const d = " + storage + ";"
+        " for (const [k, v] of Object.entries(d)) localStorage.setItem(k, v);"
+        " } catch (e) {} })()"
     )
 
 
@@ -112,6 +113,9 @@ def _session_still_valid(page, captured: list) -> bool:
         page.goto(SIGMA_URL, wait_until="domcontentloaded", timeout=60_000)
         time.sleep(_VALIDATE_SETTLE)  # SPA usa websocket (Pusher) — networkidle nunca assenta
         if "sign-in" in page.url:
+            return False
+        # Form de login renderizado = desautenticado, mesmo se a URL ainda não mudou.
+        if page.locator("input[name=username]").count() > 0:
             return False
         if any("/api" in c["url"] and c["status"] == 401 for c in captured):
             return False
