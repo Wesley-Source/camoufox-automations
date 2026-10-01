@@ -26,3 +26,9 @@ def test_runs_de_automacoes_ok_existem():  # CR-28
         elif run.startswith("venv/bin/python "):
             script = Path(run.split()[1])
             assert script.exists(), f"{a['id']}: script {script} não existe"
+
+
+def test_destrutivo_documenta_gate_env():  # M6: run do delete trava sem o env
+    from core.automations import AUTOMATIONS
+    ent = next(a for a in AUTOMATIONS if a["id"] == "sigma.customer.delete")
+    assert "SIGMA_ALLOW_DESTRUCTIVE=1" in ent["run"]

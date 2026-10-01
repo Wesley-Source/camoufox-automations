@@ -37,9 +37,15 @@ def sync_expiring(client: SigmaApiClient) -> dict:
     data = client.customers_expiring()
     save_raw(f"{SIGMA_API}/customers/expiring", data)
     rows = data.get("data", data if isinstance(data, list) else [])
-    for i, row in enumerate(rows):
-        save_entity("expiring", row.get("id", i), row)
-    return {"what": "expiring", "synced": len(rows), "status": "synced"}
+    saved = 0
+    for row in rows:
+        # M4: sem id, o upsert usaria o índice como external_id e misturaria
+        # clientes diferentes entre runs — pula.
+        if not row.get("id"):
+            continue
+        save_entity("expiring", row["id"], row)
+        saved += 1
+    return {"what": "expiring", "synced": saved, "status": "synced"}
 
 
 def sync_dashboard(client: SigmaApiClient) -> dict:

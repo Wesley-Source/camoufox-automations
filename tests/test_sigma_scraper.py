@@ -25,7 +25,8 @@ class FakeClient:
         return self.customers_pages[page]
 
     def customers_expiring(self):
-        return {"data": [{"id": "E1", "username": "soon"}]}
+        return {"data": [{"id": "E1", "username": "soon"},
+                         {"username": "sem_id"}]}  # M4: row sem id é pulado
 
     def dashboard_chart(self, name):
         return {"description": name, "total": 7}
