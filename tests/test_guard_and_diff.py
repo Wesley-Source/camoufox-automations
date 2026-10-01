@@ -79,7 +79,7 @@ def test_diff_snapshot_detecta_tudo():
     d = diff(old, new)
     assert d["added"] == ["d"]
     assert d["removed"] == ["c"]
-    assert d["changed"] == {"a": ["status"]}
+    assert d["changed"] == {"a": {"status": ["ACTIVE", "SUSPENDED"]}}
 
 
 def test_diff_snapshot_zero_mudancas():

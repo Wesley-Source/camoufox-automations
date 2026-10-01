@@ -58,12 +58,15 @@ def diff(old: dict, new: dict) -> dict:
     removed = sorted(set(old) - set(new))
     changed = {}
     for cid in sorted(set(old) & set(new)):
+        # valores old/new — só nomes de campo não deixam atribuir a
+        # divergência ao explorer ou a churn orgânico do painel.
         fields = {
-            k for k in set(old[cid]) | set(new[cid])
+            k: [old[cid].get(k), new[cid].get(k)]
+            for k in set(old[cid]) | set(new[cid])
             if old[cid].get(k) != new[cid].get(k)
         }
         if fields:
-            changed[cid] = sorted(fields)
+            changed[cid] = fields
     return {"added": added, "removed": removed, "changed": changed}
 
 
@@ -74,7 +77,9 @@ def show_diff(d: dict):
     for cid in d["removed"][:10]:
         typer.secho(f"  - {cid}", fg=typer.colors.RED)
     for cid, fields in list(d["changed"].items())[:10]:
-        typer.secho(f"  ~ {cid}: {', '.join(fields)}", fg=typer.colors.YELLOW)
+        typer.secho(f"  ~ {cid}:", fg=typer.colors.YELLOW)
+        for k, (old_v, new_v) in fields.items():
+            typer.secho(f"      {k}: {old_v!r} → {new_v!r}", fg=typer.colors.YELLOW)
     if d["added"] or d["removed"] or d["changed"]:
         typer.secho("⚠ DIVERGÊNCIA DETECTADA — investigue antes de prosseguir.", fg=typer.colors.RED)
     else:

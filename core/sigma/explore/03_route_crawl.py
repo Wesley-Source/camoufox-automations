@@ -34,6 +34,9 @@ from core.sigma.explore._guard import install_guard, report_blocked  # noqa: E40
 
 OUT = Path(__file__).parent / "out"
 ROUTES_OUT = OUT / "routes"
+# Rotas vêm do DOM do painel; o regex barra href estranho antes do evaluate
+# (evita injeção de JS via location.hash).
+ROUTE_RE = re.compile(r"^#[A-Za-z0-9/_-]+$")
 MAP_FILE = OUT / "dashboard_map.json"
 SETTLE_SECONDS = 8
 DATA_GRACE = 6  # pós-router: janela pros GETs de dados da rota
@@ -92,6 +95,8 @@ def looks_like_anomaly(s) -> str | None:
     for c in s.captured:
         if c["status"] >= 500:
             return f"status {c['status']} em {c['url']}"
+        if c["status"] == 401:
+            return "401 — token morto no meio do crawl (captura envenenada)"
     title = s.page.title().lower()
     if "attention required" in title or "just a moment" in title:
         return "desafio Cloudflare detectado"
@@ -128,6 +133,10 @@ def main(
             n_before = len(s.captured)
             for route, expected in todo:
                 typer.echo(f"\n→ {route}")
+                if not ROUTE_RE.match(route):
+                    anomaly = f"rota com caracteres inesperados: {route!r}"
+                    typer.secho(f"✖ {anomaly} — parando (evita injeção no evaluate).", fg=typer.colors.RED)
+                    break
                 s.page.evaluate(f"() => location.hash = '{route}'")
                 _wait_route_ready(s, route, expected)
                 time.sleep(DATA_GRACE)  # GETs de dados da rota disparam depois do render
@@ -144,6 +153,12 @@ def main(
                     if c["method"] == "GET"
                 ]
                 n_before = len(s.captured)
+                if not any(g["status"] == 200 for g in new_gets):
+                    # Captura envenenada (ex.: 401 na rota) NÃO é gravada —
+                    # assim o crawl resumível re-visita na próxima execução.
+                    typer.secho(f"  ⚠ nenhum GET 200 em {route} — captura descartada.", fg=typer.colors.YELLOW)
+                    time.sleep(random.uniform(delay, delay + 2))
+                    continue
                 s.page.screenshot(path=str(ROUTES_OUT / f"{slug_for(route)}.png"), full_page=True)
                 (ROUTES_OUT / f"{slug_for(route)}.json").write_text(
                     json.dumps(

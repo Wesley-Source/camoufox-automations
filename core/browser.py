@@ -31,4 +31,7 @@ class BrowserEngine:
             try:
                 yield page
             finally:
-                page.close()
+                try:
+                    page.close()
+                except Exception:
+                    pass  # browser já morto: não mascara o erro real do corpo

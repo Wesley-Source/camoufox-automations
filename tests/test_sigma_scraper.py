@@ -47,7 +47,7 @@ def tmp_db(monkeypatch, tmp_path):
     # scraper lê DB_PATH via módulo database (import * não copia constantes aqui)
     import core.sigma.scraper as scraper
     monkeypatch.setattr(scraper, "init_db", database.init_db)
-    monkeypatch.setattr(scraper, "save_entity", database.save_entity)
+    monkeypatch.setattr(scraper, "save_entities", database.save_entities)
     monkeypatch.setattr(scraper, "save_raw", database.save_raw)
     monkeypatch.setattr(scraper, "count_entities", database.count_entities)
     return str(tmp_path / "test.db")

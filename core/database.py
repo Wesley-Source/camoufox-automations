@@ -89,15 +89,26 @@ def save_raw(url: str, raw_data):
 
 def save_entity(kind: str, external_id: str, payload: dict | list):
     """UPSERT de entidade de painel (camada limpa genérica)."""
+    save_entities(kind, [(external_id, payload)])
+
+
+def save_entities(kind: str, pairs) -> int:
+    """UPSERT em lote — 1 conexão/commit pro sync inteiro (antes eram
+    ~700 connects por sync de clientes, cada um com fsync e janela de lock)."""
+    now = _now()
+    rows = [
+        (kind, str(eid), json.dumps(p, ensure_ascii=False, default=str), now)
+        for eid, p in pairs
+    ]
     with _conn() as conn:
-        conn.execute("""
+        conn.executemany("""
             INSERT INTO panel_entities (kind, external_id, payload, updated_at)
             VALUES (?, ?, ?, ?)
             ON CONFLICT(kind, external_id) DO UPDATE SET
                 payload=excluded.payload,
                 updated_at=excluded.updated_at
-        """, (kind, str(external_id),
-              json.dumps(payload, ensure_ascii=False, default=str), _now()))
+        """, rows)
+    return len(rows)
 
 
 def count_entities(kind: str = None) -> int:

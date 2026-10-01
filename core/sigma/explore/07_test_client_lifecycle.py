@@ -23,6 +23,7 @@ Rode: venv/bin/python core/sigma/explore/07_test_client_lifecycle.py
 """
 import importlib
 import json
+import re
 import sys
 import time
 from datetime import datetime, timedelta
@@ -67,9 +68,12 @@ def make_guard(state: dict):
                 route.continue_()
                 return
             url = req.url
+            tid = state.get("test_id")
             ok = (
                 (req.method.upper() == "POST" and url.rstrip("/") == CREATE_URL)
-                or (state.get("test_id") and state["test_id"] in url)
+                # boundary explícito: substring solta liberaria URL qualquer
+                # que apenas CONTENHA o id (query string, path parcial).
+                or (tid and re.search(rf"/customers/{re.escape(tid)}(/|$)", url))
             )
             if ok:
                 route.continue_()

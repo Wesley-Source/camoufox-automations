@@ -322,7 +322,7 @@ class SigmaApiClient:
         return self._get("/notices/list")
 
     def dashboard_chart(self, name: str) -> dict:
-        return self._get(f"/dashboard/charts/{name}")
+        return self._get(f"/dashboard/charts/{quote(str(name), safe='')}")
 
     def dashboard_recovery(self) -> dict:
         return self._get("/dashboard/metrics/recovery")

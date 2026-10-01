@@ -139,6 +139,8 @@ Fonte viva: `core/automations.py` (este espelho pode envelhecer; o comando
 
 ## Deploy (planejado)
 
-VPS + cron para `sigma-sync --what all` diário + alerta de clientes a vencer
+VPS + cron para `sigma-sync --what all` diário + alerta de clientes a vencer.
+No cron use `timeout --signal=TERM` (SIGKILL deixa Xvfb/Firefox órfãos;
+SIGTERM o Playwright trata e faz cleanup).
 (dados já no banco; notifier é o que falta). Segundo site real substitui o
 placeholder `ecommerce_x` clonando o padrão de pastas do sigma.
