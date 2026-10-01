@@ -215,3 +215,16 @@ def test_id_vai_urlencoded_na_url(client):  # CR-13: path injection
     client.delete_customer("a/b?c")
     url = client._session.calls[-1]["url"]
     assert "/customers/a%2Fb%3Fc" in url
+
+
+def test_mutate_aceita_204(client):  # CR-22
+    client._session.responses = [FakeResponse(204, text="")]
+    assert client.resync_customer("abc1") == {}
+
+
+def test_doh_pin_expira(monkeypatch):  # CR-21
+    c = sigma_api.SigmaApiClient.__new__(sigma_api.SigmaApiClient)
+    c._browser = False
+    c._doh_ip = "1.2.3.4"
+    c._doh_ts = sigma_api.time.monotonic() - sigma_api._DOH_TTL - 1
+    assert sigma_api.time.monotonic() - c._doh_ts >= sigma_api._DOH_TTL

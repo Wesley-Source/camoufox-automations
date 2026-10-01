@@ -17,6 +17,8 @@ Bearer". `ensure_logged_page` reutiliza a sessão salva ou refaz o login no
 browser — validade é decisão do servidor (/api/auth/me).
 """
 from contextlib import contextmanager
+import json
+import time
 from urllib.parse import quote
 
 import requests
@@ -45,6 +47,7 @@ _AXIOS_HEADERS = {
 
 _DNS_ERRORS = ("name or service not known", "temporary failure in name resolution",
                "nameresolutionerror", "getaddrinfo failed")
+_DOH_TTL = 300  # s — pin de IP expira; Cloudflare rotaciona IPs (CR-21)
 
 
 def _is_dns_failure(exc: Exception) -> bool:
@@ -90,29 +93,42 @@ class _BrowserTransport:
         self._page = page
         self._extra = extra_headers or {}
 
+    _FETCH_JS = (
+        "async ([u, h, m, b, t]) => {"
+        " try { const r = await fetch(u, { method: m, headers: h,"
+        " body: b, signal: AbortSignal.timeout(t) });"
+        " return [r.status, await r.text()]; }"
+        " catch (e) { return e.name === 'AbortError' ? ['TIMEOUT', ''] :"
+        " Promise.reject(e); } }"
+    )
+
+    def _fetch(self, url, headers, method="GET", body=None, timeout=None):
+        """fetch com timeout REAL — AbortSignal (CR-05: antes o timeout era
+        placebo, o fetch ficava pendurado pra sempre)."""
+        return self._page.evaluate(
+            self._FETCH_JS,
+            [url, headers, method,
+             json.dumps(body) if body is not None else None,
+             timeout if timeout is not None else 30_000],
+        )
+
     def get(self, url, params=None, headers=None, timeout=None):
         if params:
             from urllib.parse import urlencode
             url = f"{url}?{urlencode(params)}"
         merged = {**self._extra, **(headers or {})}
-        status, text = self._page.evaluate(
-            "async ([u, h]) => { const r = await fetch(u, {headers: h});"
-            " return [r.status, await r.text()]; }",
-            [url, merged],
-        )
+        status, text = self._fetch(url, merged, "GET", None, timeout)
+        if status == "TIMEOUT":
+            raise TimeoutError(f"fetch sem resposta em {timeout or 30_000}ms: {url}")
         return _BrowserResponse(status, text)
 
     def request(self, method, url, json=None, headers=None, timeout=None):
         """Mutações: fetch com method + body JSON (mesma assinatura do requests)."""
         import json as _json
         merged = {**self._extra, **(headers or {})}
-        status, text = self._page.evaluate(
-            "async ([u, h, m, b]) => { const r = await fetch(u,"
-            " {method: m, headers: h, body: b});"
-            " return [r.status, await r.text()]; }",
-            [url, merged, method.upper(),
-             _json.dumps(json) if json is not None else None],
-        )
+        status, text = self._fetch(url, merged, method.upper(), json, timeout)
+        if status == "TIMEOUT":
+            raise TimeoutError(f"fetch sem resposta em {timeout or 30_000}ms: {url}")
         return _BrowserResponse(status, text)
 
 
@@ -143,6 +159,7 @@ class SigmaApiClient:
                  transport=None):
         self.session_path = session_path
         self._doh_ip: str | None = None
+        self._doh_ts: float = 0.0
         self._browser = transport is not None
         self._session = transport if transport is not None else requests.Session()
         if not self._browser:
@@ -186,6 +203,7 @@ class SigmaApiClient:
         if not ip:
             return None
         self._doh_ip = ip
+        self._doh_ts = time.monotonic()
         self._session.mount("https://", _DoHAdapter(SIGMA_HOST))
         typer.secho(f"⚠ DNS do sistema falhou p/ {SIGMA_HOST} — DoH -> {ip}", fg=typer.colors.YELLOW)
         return ip
@@ -196,7 +214,8 @@ class SigmaApiClient:
             return self._session.get(f"{SIGMA_API}{path}", params=params,
                                      headers=auth, timeout=30_000)
         self._session.headers["Authorization"] = auth["Authorization"]
-        if self._doh_ip:  # DNS já falhou antes: vai direto por IP
+        if self._doh_ip and time.monotonic() - self._doh_ts < _DOH_TTL:
+            # DNS já falhou antes: vai direto por IP (pin expira em _DOH_TTL)
             return self._session.get(
                 f"https://{self._doh_ip}/api{path}",
                 params=params, headers={"Host": SIGMA_HOST}, timeout=30,
@@ -215,11 +234,16 @@ class SigmaApiClient:
             )
 
     def _status_of(self, path: str, token: str) -> int:
-        self.token = token
+        """Proba o token SEM alterar estado (CR-06: antes mutava self.token
+        e o except SigmaApiError era código morto — falhas de request levantam
+        ConnectionError/Timeout, não SigmaApiError)."""
+        old, self.token = self.token, token
         try:
             return self._request(path).status_code
-        except SigmaApiError:
+        except Exception:
             return -1
+        finally:
+            self.token = old
 
     def _get(self, path: str, params: dict | None = None) -> dict | list:
         r = self._request(path, params)
@@ -240,8 +264,10 @@ class SigmaApiClient:
             method, f"{SIGMA_API}{path}", json=payload, headers=headers,
             timeout=30_000 if self._browser else 30,
         )
-        if r.status_code not in (200, 201):
+        if r.status_code not in (200, 201, 204):
             raise SigmaApiError(path, r.status_code, r.text)
+        if r.status_code == 204:  # no content — nada pra parsear (CR-22)
+            return {}
         try:
             return r.json()
         except ValueError:
