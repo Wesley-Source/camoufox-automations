@@ -197,25 +197,39 @@ def register(mcp):
     @mcp.tool()
     async def login_sigma() -> str:
         """
-        Faz login no painel Sigma (https://lideriptv.sigma.st) e retorna o token de acesso.
-        Usa as variáveis de ambiente SIGMA_USERNAME e SIGMA_PASSWORD.
+        Use quando: precisar de um login FRESCO no painel Sigma (as outras
+        tools reutilizam a sessão salva sozinhas — raramente é preciso).
+
+        Retorna: token mascarado (16 primeiros caracteres).
+
+        Cuidados: usa SIGMA_USERNAME/SIGMA_PASSWORD; abre browser real e
+        leva ~1min; não copie sigma_session.json entre máquinas (IP-bound).
         """
         return await anyio.to_thread.run_sync(_login_sigma)
 
     @mcp.tool()
     async def sincronizar_sigma(o_que: SyncWhat, paginas: int = 5, per_page: int = 100) -> str:
         """
-        Sincroniza dados do painel Sigma para o banco local (somente leitura).
-        Equivalente MCP de `sigma-sync --what` (CLI).
-        paginas: páginas de clientes quando aplicável; per_page: linhas por página (cap 100).
+        Use quando: quiser espelhar dados atuais do painel no banco local
+        antes de consultar (equivalente CLI: sigma-sync --what).
+
+        Retorna: JSON com resumo por dataset ({what, synced, pages, status}).
+
+        Cuidados: somente leitura no painel; per_page cap 100 (a API ignora
+        valores maiores); paginas só afeta customers.
         """
         return await anyio.to_thread.run_sync(_sincronizar_sigma, o_que, paginas, per_page)
 
     @mcp.tool()
     async def status_sigma() -> str:
         """
-        Valide o acesso ao painel Sigma: usuário, expiração do painel
-        (None = ilimitado) e contagem de entidades no banco local.
+        Use quando: checar se o acesso ao Sigma está saudável antes de operar.
+
+        Retorna: JSON {usuario, conta_expira_em, banco_local} — expiração da
+        CONTA (membership; None = ilimitado) e contagem por dataset no banco.
+
+        Cuidados: abre browser real (~10s com sessão válida); "conta_expira_em"
+        NÃO é a expiração do painel inteiro (essa não é exposta pela API).
         """
         return await anyio.to_thread.run_sync(_status_sigma)
 
@@ -233,11 +247,15 @@ def register(mcp):
         mostrar_senha: bool = False,
     ) -> str:
         """
-        Cria um cliente no painel Sigma. package_id e server_id são IDs string
-        do painel (ex.: rdqLkQjWAE) e devem formar par coerente (o pacote
-        pertence ao servidor). Senha gerada se não informada e mascarada no
-        resultado — passe mostrar_senha=True para vê-la em claro (M1).
-        name/email padrão derivados do username.
+        Use quando: precisar CRIAR um cliente novo no painel.
+
+        Retorna: JSON {criado, id, senha} — senha mascarada por padrão
+        (mostrar_senha=True exibe em claro; CLI equivale: --show-password).
+
+        Cuidados: MUTAÇÃO (cria no painel real). Use listar_pacotes_sigma
+        para achar o par package_id/server_id coerente — pacote de outro
+        servidor dá 400. Senha: só letras/números/-/@/_ (auto-gerada segura).
+        Paridade CLI: sigma-customer-create.
         """
         return await anyio.to_thread.run_sync(
             _criar_cliente_sigma, username, package_id, server_id,
@@ -249,9 +267,14 @@ def register(mcp):
         customer_id: str, note: str = None, add_days: int = 0, set_expiry: str = None
     ) -> str:
         """
-        Edita um cliente do painel Sigma: altera a nota e/ou define a expiração
-        (add_days dias a partir da atual, ou set_expiry "YYYY-MM-DD" direto).
-        Ao menos um dos três deve ser informado.
+        Use quando: precisar mudar nota e/ou expiração de um cliente.
+
+        Retorna: JSON {id, nota, expira} — expiração calculada (YYYY-MM-DD).
+
+        Cuidados: MUTAÇÃO (edita no painel real). add_days conta da data
+        atual do cliente; set_expiry "YYYY-MM-DD" fixa direto; ao menos um
+        dos três obrigatório. Paridade CLI: sigma-customer-update
+        (--note/--add-days/--set-expiry).
         """
         return await anyio.to_thread.run_sync(
             _editar_cliente_sigma, customer_id, note, add_days, set_expiry
@@ -260,15 +283,29 @@ def register(mcp):
     @mcp.tool()
     async def excluir_cliente_sigma(customer_id: str, confirmar: bool = False) -> str:
         """
-        Remove um cliente do painel Sigma (SOFT delete, restaurável).
-        DESTRUTIVO: exige confirmar=True além do ID correto.
+        Use quando: o DONO pediu explicitamente a remoção de um cliente.
+
+        Retorna: JSON {id, resposta} com campos seguros (id/deleted_at/status).
+
+        Cuidados: DESTRUTIVO mas é SOFT delete (restaurável no painel).
+        Exige confirmar=True E o env SIGMA_ALLOW_DESTRUCTIVE=1 — confirmar
+        preenchido pelo próprio agente não é confirmação (CR-10).
+        Paridade CLI: sigma-customer-delete ID --yes (mesmo gate de env).
         """
         return await anyio.to_thread.run_sync(_excluir_cliente_sigma, customer_id, confirmar)
 
     @mcp.tool()
     async def resync_cliente_sigma(customer_id: str) -> str:
-        """Força o resync do cliente no servidor IPTV do painel Sigma.
-        Retorna só campos públicos do cliente (nunca senha/m3u_url)."""
+        """
+        Use quando: cliente diz que atualizou a lista no app e não vê os
+        canais novos — força o painel reenviar a configuração ao servidor IPTV.
+
+        Retorna: JSON {id, cliente} com apenas campos públicos (username,
+        status, expires_at, note…) — NUNCA senha/m3u_url, que embutem senha.
+
+        Cuidados: mutação inofensiva (não altera dados, só sincroniza).
+        Paridade CLI: sigma-customer-resync.
+        """
         return await anyio.to_thread.run_sync(_resync_cliente_sigma, customer_id)
 
     # ---- consulta (leitura) -----------------------------------------------------
@@ -276,27 +313,41 @@ def register(mcp):
     @mcp.tool()
     async def listar_pacotes_sigma() -> str:
         """
-        Lista servidores e pacotes do painel Sigma (sincroniza primeiro).
-        Use para achar o par package_id/server_id coerente antes de
-        criar um cliente (o pacote pertence a um servidor).
+        Use quando: for criar/editar cliente e precisar dos IDs de pacote e
+        servidor (o par precisa ser coerente).
+
+        Retorna: JSON {servers: [...], packages: [...]} com name, server_id,
+        preço etc. — dados de catálogo, sem PII.
+
+        Cuidados: sincroniza o catálogo do painel antes de listar (2 GETs);
+        catálogo grande (~128 pacotes). Paridade CLI: sigma-servers-packages.
         """
         return await anyio.to_thread.run_sync(_listar_pacotes_sigma)
 
     @mcp.tool()
     async def buscar_cliente_sigma(termo: str, no_painel: bool = False) -> str:
         """
-        Busca clientes por parte do username, nome, email ou id.
-        Padrão consulta o banco local (rápido, última sincronização);
-        no_painel=True consulta o painel ao vivo (mais lento, dados atuais).
-        Retorna apenas campos públicos.
+        Use quando: tiver parte do username/nome/email/id e precisar do
+        cliente completo (ex.: id antes de editar/excluir).
+
+        Retorna: JSON {onde, total, clientes:[...]} — só campos públicos.
+
+        Cuidados: padrão busca no BANCO LOCAL (rápido; dados da última
+        sincronização — rode sincronizar_sigma antes se estiver velho).
+        no_painel=True consulta ao vivo (lento: pagina a lista toda).
+        Paridade CLI: grep em sigma-sync + consultas locais.
         """
         return await anyio.to_thread.run_sync(_buscar_cliente_sigma, termo, no_painel)
 
     @mcp.tool()
     async def listar_clientes_sigma(pagina: int = 1, por_pagina: int = 20) -> str:
         """
-        Lista clientes do banco local (mais recentemente sincronizados primeiro).
-        por_pagina cap 100. Use sincronizar_sigma('customers') antes para atualizar.
+        Use quando: quiser folhear a base local de clientes (recentes primeiro).
+
+        Retorna: JSON {pagina, total, clientes:[...]} — só campos públicos.
+
+        Cuidados: lê o BANCO LOCAL (não o painel); por_pagina cap 100;
+        rode sincronizar_sigma('customers') antes para dados atuais.
         """
         return await anyio.to_thread.run_sync(
             _listar_clientes_sigma, pagina, por_pagina

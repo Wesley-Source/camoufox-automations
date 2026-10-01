@@ -26,7 +26,14 @@ from core.sigma.scraper import (
 def register(app: typer.Typer):
     @app.command("sigma-login")
     def cli_sigma_login(save: bool = False):
-        """Login no painel Sigma: imprime o token (usa SIGMA_USERNAME/SIGMA_PASSWORD)."""
+        """
+        Login FRESCO no painel Sigma (as outras forças reutilizam a sessão salva).
+
+        Use quando: sessão morta e sem env pra relogin automático.
+        Retorna: token mascarado (16 chars; CR-14 — completo não vai pro histórico).
+        Cuidados: --save grava sessão 0600 (atômica); não copie o arquivo
+        entre máquinas — cf_clearance é IP-bound.
+        """
         username = os.environ.get("SIGMA_USERNAME")
         password = os.environ.get("SIGMA_PASSWORD")
         if not username or not password:
@@ -52,7 +59,14 @@ def register(app: typer.Typer):
         pages: int = typer.Option(5, help="Páginas de clientes (quando aplicável)."),
         per_page: int = typer.Option(100, help="Clientes por página (cap real da API: 100)."),
     ):
-        """Sincroniza dados do painel Sigma para o banco local (read-only)."""
+        """
+        Espelha dados do painel no banco local (read-only).
+
+        Use quando: antes de consultar/buscar clientes locais.
+        Retorna: resumo por dataset ({what, synced, pages, status}).
+        Cuidados: --what valida contra a whitelist; --per-page cap 100;
+        --pages só afeta customers. Paridade MCP: sincronizar_sigma.
+        """
         if what not in (*SYNCERS, "all"):
             typer.secho(f"✖ 'what' inválido: {what}. Opções: {', '.join([*SYNCERS, 'all'])}", fg=typer.colors.RED)
             raise typer.Exit(1)
@@ -73,7 +87,14 @@ def register(app: typer.Typer):
 
     @app.command("sigma-status")
     def cli_sigma_status():
-        """Validade do token/painel Sigma + contagem do banco local."""
+        """
+        Saúde do acesso Sigma + banco local.
+
+        Use quando: checagem rápida antes de operar (cron, pós-sync).
+        Retorna: usuário, expiração da CONTA/membership (não do painel
+        inteiro — esse dado não é exposto pela API) e contagens por dataset.
+        Cuidados: abre browser (~10s com sessão válida).
+        """
         try:
             with open_client() as client:
                 me = client.me()
@@ -98,7 +119,15 @@ def register(app: typer.Typer):
         password: str = typer.Option(None, help="Senha (padrão: gerada; só letras/números/-/@/_)."),
         show_password: bool = typer.Option(False, "--show-password", help="Mostra a senha em claro."),
     ):
-        """Cria um cliente no painel Sigma."""
+        """
+        Cria um cliente no painel Sigma.
+
+        Use quando: onboarding de cliente novo. Ache o par package/server
+        com sigma-servers-packages (pacote de outro servidor dá 400).
+        Retorna: id do cliente + senha (mascarada; --show-password revela).
+        Cuidados: MUTAÇÃO real; senha só letras/números/-/@/_. Paridade
+        MCP: criar_cliente_sigma.
+        """
         pwd = password or secrets.token_urlsafe(12)
         payload = {
             "username": username, "password": pwd, "password_confirmation": pwd,
@@ -123,7 +152,14 @@ def register(app: typer.Typer):
         add_days: int = typer.Option(0, help="Estende a expiração em N dias."),
         set_expiry: str = typer.Option(None, help="Define expiração fixa YYYY-MM-DD."),
     ):
-        """Edita nota e/ou expiração de um cliente (busca o row e reenvia o payload completo)."""
+        """
+        Edita nota e/ou expiração de um cliente.
+
+        Use quando: renovação (--add-days) ou ajuste de vencimento/nota.
+        Retorna: confirmação com nova expiração (YYYY-MM-DD).
+        Cuidados: MUTAÇÃO — reenvia o payload completo do row; ao menos
+        uma opção obrigatória. Paridade MCP: editar_cliente_sigma.
+        """
         if not (note or add_days or set_expiry):
             typer.secho("✖ Nada a mudar: use --note, --add-days ou --set-expiry.", fg=typer.colors.RED)
             raise typer.Exit(1)
@@ -157,7 +193,15 @@ def register(app: typer.Typer):
         customer_id: str = typer.Argument(..., help="ID do cliente."),
         yes: bool = typer.Option(False, "--yes", help="Confirma a exclusão (soft delete)."),
     ):
-        """Remove um cliente (SOFT delete — restaurável via POST /customers/restore)."""
+        """
+        Remove um cliente (SOFT delete — restaurável no painel).
+
+        Use quando: o DONO pediu explicitamente a remoção.
+        Retorna: resposta projetada (id/deleted_at/status — sem segredos).
+        Cuidados: exige --yes E SIGMA_ALLOW_DESTRUCTIVE=1 (CR-10: flag
+        preenchida pelo agente não é confirmação). Paridade MCP:
+        excluir_cliente_sigma(confirmar=True).
+        """
         if not yes:
             typer.secho("✖ Destrutivo: confirme com --yes.", fg=typer.colors.RED)
             raise typer.Exit(1)
@@ -176,7 +220,14 @@ def register(app: typer.Typer):
 
     @app.command("sigma-customer-resync")
     def cli_sigma_customer_resync(customer_id: str = typer.Argument(..., help="ID do cliente.")):
-        """Força resync do cliente no servidor IPTV."""
+        """
+        Força o resync do cliente no servidor IPTV.
+
+        Use quando: cliente atualizou a lista no app e não vê canais novos.
+        Retorna: só campos públicos do cliente (nunca senha/m3u_url).
+        Cuidados: mutação inofensiva (não altera dados). Paridade MCP:
+        resync_cliente_sigma.
+        """
         try:
             with open_client() as client:
                 res = client.resync_customer(customer_id)
@@ -192,7 +243,14 @@ def register(app: typer.Typer):
     def cli_sigma_servers_packages(
         json_out: bool = typer.Option(False, "--json", help="Catálogo completo em JSON."),
     ):
-        """Sincroniza e lista servidores e pacotes (valida par p/ create)."""
+        """
+        Sincroniza e lista o catálogo de servers + packages.
+
+        Use quando: antes de criar/editar cliente — valida o par
+        package_id/server_id (o pacote pertence a um servidor).
+        Retorna: contagens; --json traz o catálogo completo (sem PII).
+        Cuidados: 2 GETs no painel. Paridade MCP: listar_pacotes_sigma.
+        """
         try:
             with open_client() as client:
                 res = sync_servers_packages(client)

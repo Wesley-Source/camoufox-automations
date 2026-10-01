@@ -123,11 +123,28 @@ Fonte viva: `core/automations.py` (este espelho pode envelhecer; o comando
 ## Interfaces
 
 **CLI** (`venv/bin/python main.py <comando>`): `automations`, `sigma-login`,
-`sigma-sync`, `sigma-status`, `sigma-customer-create|update|delete|resync`,
-`sync-item`. MCP (`main.py mcp`): `listar_automacoes`, `login_sigma`,
-`sincronizar_sigma`, `status_sigma`, `criar_cliente_sigma`,
-`editar_cliente_sigma`, `excluir_cliente_sigma`, `resync_cliente_sigma`,
-`consultar_e_sincronizar_produto`.
+`sigma-sync`, `sigma-status`, `sigma-servers-packages`,
+`sigma-customer-create|update|delete|resync`, `sync-item`. MCP (`main.py mcp`):
+`listar_automacoes`, `login_sigma`, `sincronizar_sigma`, `status_sigma`,
+`criar_cliente_sigma`, `editar_cliente_sigma`, `excluir_cliente_sigma`,
+`resync_cliente_sigma`, `listar_pacotes_sigma`, `buscar_cliente_sigma`,
+`listar_clientes_sigma`, `consultar_e_sincronizar_produto`.
+
+### Paridade CLI ↔ MCP
+
+| Ação | CLI | MCP |
+|---|---|---|
+| Sincronizar | `sigma-sync --what` | `sincronizar_sigma(o_que)` |
+| Criar cliente | `sigma-customer-create` | `criar_cliente_sigma` |
+| Editar cliente | `sigma-customer-update` | `editar_cliente_sigma` |
+| Excluir | `sigma-customer-delete --yes` | `excluir_cliente_sigma(confirmar=True)` |
+| Resync | `sigma-customer-resync` | `resync_cliente_sigma` |
+| Catálogo servers/packages | `sigma-servers-packages` | `listar_pacotes_sigma` |
+
+Ambos exigem `SIGMA_ALLOW_DESTRUCTIVE=1` para exclusão. Senha mascarada por
+padrão nas duas interfaces. Docstrings MCP seguem o formato
+**Use quando / Retorna / Cuidados** — o schema dos enums (`o_que`, `status`)
+é validado pelo cliente via `Literal`.
 
 ### MCP: variáveis de ambiente NÃO são herdadas
 
