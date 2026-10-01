@@ -197,7 +197,7 @@ class SigmaApiClient:
         if sess and self._status_of("/auth/me", sess["token"]) == 200:
             self._apply_session_cookies(sess)
             return sess["token"]
-        typer.secho("⚠ Token ausente/inválido — refazendo login no browser...", fg=typer.colors.YELLOW)
+        typer.secho("⚠ Token ausente/inválido — refazendo login no browser...", fg=typer.colors.YELLOW, err=True)
         with ensure_logged_page(session_path=self.session_path):
             pass  # o contexto já reloga e salva quando a sessão está morta
         sess = load_session(self.session_path)
@@ -224,7 +224,7 @@ class SigmaApiClient:
         self._doh_ip = ip
         self._doh_ts = time.monotonic()
         self._session.mount("https://", _DoHAdapter(SIGMA_HOST))
-        typer.secho(f"⚠ DNS do sistema falhou p/ {SIGMA_HOST} — DoH -> {ip}", fg=typer.colors.YELLOW)
+        typer.secho(f"⚠ DNS do sistema falhou p/ {SIGMA_HOST} — DoH -> {ip}", fg=typer.colors.YELLOW, err=True)
         return ip
 
     def _request(self, path: str, params: dict | None = None) -> requests.Response:

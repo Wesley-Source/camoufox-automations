@@ -180,13 +180,13 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
 
         if reused:
             blocked = guard(page) if guard else []
-            typer.secho(f"✔ Sessão reutilizada ({session_path}).", fg=typer.colors.GREEN)
+            typer.secho(f"✔ Sessão reutilizada ({session_path}).", fg=typer.colors.GREEN, err=True)
             token = saved["token"]
         else:
             if saved:
-                typer.secho("⚠ Sessão salva inválida ou expirada — refazendo login...", fg=typer.colors.YELLOW)
+                typer.secho("⚠ Sessão salva inválida ou expirada — refazendo login...", fg=typer.colors.YELLOW, err=True)
             else:
-                typer.secho(f"ℹ Sem sessão salva em {session_path} — logando...", fg=typer.colors.YELLOW)
+                typer.secho(f"ℹ Sem sessão salva em {session_path} — logando...", fg=typer.colors.YELLOW, err=True)
             if not (username and password):
                 raise RuntimeError(
                     "Sem sessão válida e sem credenciais. Defina SIGMA_USERNAME/SIGMA_PASSWORD "
@@ -210,7 +210,7 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
                     },
                     session_path,
                 )
-            typer.secho(f"✔ Login completo; sessão atualizada em {session_path}.", fg=typer.colors.GREEN)
+            typer.secho(f"✔ Login completo; sessão atualizada em {session_path}.", fg=typer.colors.GREEN, err=True)
 
         yield SimpleNamespace(
             page=page, token=token, captured=captured,
