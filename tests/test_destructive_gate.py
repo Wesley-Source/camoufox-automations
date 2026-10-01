@@ -27,3 +27,12 @@ def test_mcp_excluir_sem_gate_recusa(monkeypatch):
     from interfaces.mcp.sigma import _excluir_cliente_sigma
     res = _excluir_cliente_sigma("ZZZ", True)
     assert "SIGMA_ALLOW_DESTRUCTIVE" in res
+
+
+def test_save_session_perms_0600(tmp_path):
+    import os
+    import stat
+    from core.sigma.auth import save_session
+    f = tmp_path / "s.json"
+    save_session({"token": "t", "cookies": []}, str(f))
+    assert stat.S_IMODE(os.stat(f).st_mode) & 0o077 == 0  # CR-12

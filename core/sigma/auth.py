@@ -39,11 +39,14 @@ def _attach_api_monitor(page, captured: list):
                 body = resp.text()[:_BODY_SNIPPET]
             except Exception:
                 pass
+            post = resp.request.post_data
+            if "/api/auth/login" in resp.url:
+                post = "[REDACTED]"  # CR-15: credenciais não vão pro log
             captured.append({
                 "method": resp.request.method,
                 "url": resp.url,
                 "status": resp.status,
-                "post_data": resp.request.post_data,
+                "post_data": post,
                 "response_body": body,
             })
         except Exception:
@@ -86,16 +89,23 @@ def load_session(path: str = SESSION_FILE) -> dict | None:
 
 
 def save_session(sess: dict, path: str = SESSION_FILE) -> None:
-    Path(path).write_text(json.dumps(sess, indent=2, ensure_ascii=False), encoding="utf-8")
+    """CR-12: 0600 + troca atômica — token+cookies nunca ficam legíveis para
+    grupo/outros nem pela metade escritos."""
+    p = Path(path)
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(json.dumps(sess, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, p)
 
 
 def _restore_session(page, session: dict) -> None:
     """Injeta cookies (cf_clearance incluído) + localStorage ANTES do SPA carregar."""
     page.context.add_cookies(session["cookies"])
     storage = json.dumps(session.get("local_storage", {}))
+    json.loads(storage)  # CR-18: só embute no JS se for JSON válido
     # add_init_script não aceita argumentos nesta versão do Playwright —
-    # embutimos o JSON no corpo (dados nossos, não input externo).
-    # Concatenação pura: f-string aqui é armadilha de {{ }} em JS.
+    # embutimos o JSON no corpo (dados nossos, validados acima; dumps com
+    # ensure_ascii=True => ASCII puro, seguro como literal JS).
     page.add_init_script(
         "(() => { try { const d = " + storage + ";"
         " for (const [k, v] of Object.entries(d)) localStorage.setItem(k, v);"
