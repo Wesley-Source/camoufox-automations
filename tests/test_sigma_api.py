@@ -208,3 +208,10 @@ def test_expiry_date_e_due_date_nao_sofrem_ajuste():
     assert customer_new_expiry({"due_date": "2026-11-03"}, 2) == "2026-11-05"
     assert customer_new_expiry({"expiry_date": "2026-11-03",
                                 "expires_at": "2026-11-04T02:59:59Z"}, 1) == "2026-11-04"
+
+
+def test_id_vai_urlencoded_na_url(client):  # CR-13: path injection
+    client._session.responses = [FakeResponse(200, "{}")]
+    client.delete_customer("a/b?c")
+    url = client._session.calls[-1]["url"]
+    assert "/customers/a%2Fb%3Fc" in url

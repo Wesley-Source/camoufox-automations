@@ -17,6 +17,7 @@ Bearer". `ensure_logged_page` reutiliza a sessão salva ou refaz o login no
 browser — validade é decisão do servidor (/api/auth/me).
 """
 from contextlib import contextmanager
+from urllib.parse import quote
 
 import requests
 import typer
@@ -300,15 +301,15 @@ class SigmaApiClient:
 
     def update_customer(self, customer_id: str, payload: dict) -> dict | list:
         """PUT /customers/{id} — edita; envie o payload completo (create) + mudanças."""
-        return self._mutate("PUT", f"/customers/{customer_id}", payload)
+        return self._mutate("PUT", f"/customers/{quote(str(customer_id), safe='')}", payload)
 
     def resync_customer(self, customer_id: str) -> dict | list:
-        return self._mutate("POST", f"/customers/{customer_id}/resync", {})
+        return self._mutate("POST", f"/customers/{quote(str(customer_id), safe='')}/resync", {})
 
     def delete_customer(self, customer_id: str) -> dict | list:
         """DELETE /customers/{id} — SOFT delete (resposta traz deleted_at;
         restore existe em POST /customers/restore, ainda não testado)."""
-        return self._mutate("DELETE", f"/customers/{customer_id}")
+        return self._mutate("DELETE", f"/customers/{quote(str(customer_id), safe='')}")
 
 
 def find_customer(client, customer_id: str) -> dict | None:
