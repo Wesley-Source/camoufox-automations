@@ -1,6 +1,7 @@
 import json
 import os
 import secrets
+from typing import Literal
 
 import anyio
 
@@ -186,6 +187,12 @@ def _listar_clientes_sigma(pagina: int, por_pagina: int) -> str:
     )
 
 
+SyncWhat = Literal[
+    "customers", "expiring", "dashboard", "resellers",
+    "statistics", "servers_packages", "all",
+]
+
+
 def register(mcp):
     @mcp.tool()
     async def login_sigma() -> str:
@@ -196,10 +203,10 @@ def register(mcp):
         return await anyio.to_thread.run_sync(_login_sigma)
 
     @mcp.tool()
-    async def sincronizar_sigma(o_que: str, paginas: int = 5, per_page: int = 100) -> str:
+    async def sincronizar_sigma(o_que: SyncWhat, paginas: int = 5, per_page: int = 100) -> str:
         """
         Sincroniza dados do painel Sigma para o banco local (somente leitura).
-        o_que: customers | expiring | dashboard | resellers | statistics | all.
+        Equivalente MCP de `sigma-sync --what` (CLI).
         paginas: páginas de clientes quando aplicável; per_page: linhas por página (cap 100).
         """
         return await anyio.to_thread.run_sync(_sincronizar_sigma, o_que, paginas, per_page)

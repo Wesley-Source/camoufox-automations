@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 from core.automations import AUTOMATIONS
 
@@ -14,14 +15,16 @@ reg_ecommerce(mcp_app)
 reg_sigma(mcp_app)
 
 
+AutomationStatus = Literal["ok", "planned", "blocked"]
 VALID_STATUSES = ("ok", "planned", "blocked")
 
 
 @mcp_app.tool()
-def listar_automacoes(status: str = None) -> str:
+def listar_automacoes(status: AutomationStatus | None = None) -> str:
     """
-    Lista todas as automações disponíveis no hub (status ok|planned|blocked).
-    Use quando precisar descobrir o que o hub sabe fazer e como executar.
+    Lista todas as automações disponíveis no hub (status ok|planned|blocked;
+    omita para listar todas). Use quando precisar descobrir o que o hub sabe
+    fazer e como executar.
     """
     if status and status not in VALID_STATUSES:
         return f"Status inválido: {status}. Opções: {', '.join(VALID_STATUSES)} (ou omita para listar todas)."
