@@ -1,3 +1,4 @@
+import json
 import os
 import secrets
 
@@ -8,14 +9,17 @@ from core.sigma.api import (
     customer_new_expiry,
     find_customer,
     open_client,
+    project_customer,
     project_response,
     set_expiry_on_payload,
 )
+from core.database import list_entities
 from core.sigma.scraper import (
     SYNCERS,
     entities_summary,
     sync_all,
     sync_customers,
+    sync_servers_packages,
 )
 
 
@@ -179,4 +183,27 @@ def register(app: typer.Typer):
         except Exception as e:
             typer.secho(f"✖ Resync falhou: {e}", fg=typer.colors.RED)
             raise typer.Exit(1)
-        typer.secho(f"✔ Resync enviado para {customer_id}: {res}", fg=typer.colors.GREEN)
+        typer.secho(
+            f"✔ Resync enviado para {customer_id}: {project_customer(res)}",
+            fg=typer.colors.GREEN,
+        )
+
+    @app.command("sigma-servers-packages")
+    def cli_sigma_servers_packages(
+        json_out: bool = typer.Option(False, "--json", help="Catálogo completo em JSON."),
+    ):
+        """Sincroniza e lista servidores e pacotes (valida par p/ create)."""
+        try:
+            with open_client() as client:
+                res = sync_servers_packages(client)
+        except Exception as e:
+            typer.secho(f"✖ Erro: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.secho(f"✔ {res['servers']} servidor(es), {res['packages']} pacote(s) "
+                    f"({res['synced']} gravados)", fg=typer.colors.GREEN)
+        if json_out:
+            typer.echo(json.dumps(
+                {"servers": list_entities("server", limit=100),
+                 "packages": list_entities("package", limit=500)},
+                ensure_ascii=False,
+            ))

@@ -335,6 +335,15 @@ class SigmaApiClient:
     def settings_public(self) -> dict:
         return self._get("/settings/public")
 
+    def servers(self) -> list:
+        """GET /servers — catálogo de servidores (5 no painel atual)."""
+        return self._get("/servers")
+
+    def packages(self) -> list:
+        """GET /packages/list — catálogo de pacotes (128; campo server_id liga
+        ao server e valida o par p/ create). GET /packages puro é 403."""
+        return self._get("/packages/list")
+
     # ---- mutações (ciclo de vida validado no explore 07) ----------------------
 
     def create_customer(self, payload: dict) -> dict | list:
@@ -368,6 +377,49 @@ def find_customer(client, customer_id: str) -> dict | None:
         if page >= resp.get("meta", {}).get("last_page", 1):
             return None
         page += 1
+
+
+def search_customers(client, term: str, max_pages: int = 25) -> list[dict]:
+    """Busca PARCIAL de clientes na API (username/name/email contém termo).
+
+    Diferente de find_customer (id exato). A API não expõe filtro confiável
+    de busca (?username= nunca funcionou), então paginamos e filtramos aqui.
+    """
+    term = term.strip().lower()
+    if not term:
+        return []
+    hits, page = [], 1
+    while page <= max_pages:
+        resp = client.customers(page=page)
+        rows = resp.get("data", [])
+        for row in rows:
+            hay = " ".join(
+                str(row.get(k, "")) for k in ("username", "name", "email")
+            ).lower()
+            if term in hay:
+                hits.append(row)
+        last_page = resp.get("meta", {}).get("last_page")
+        if not rows or (last_page is not None and page >= last_page):
+            break
+        page += 1
+    return hits
+
+
+# Campos seguros para exibir um cliente (allowlist). NUNCA password,
+# m3u_url/renew_url — a URL do M3U embute a senha do cliente nela.
+CUSTOMER_PUBLIC_FIELDS = (
+    "id", "username", "name", "email", "status", "expires_at",
+    "connections", "note", "server_name", "package_name",
+    "is_trial", "created_at",
+)
+
+
+def project_customer(row) -> dict:
+    """Projeção segura de um row de cliente p/ exibição (conselho: resync
+    devolve o row COMPLETO com password/m3u_url — nunca ecoar cru)."""
+    if not isinstance(row, dict):
+        return {"raw": str(row)[:200]}
+    return {k: row.get(k) for k in CUSTOMER_PUBLIC_FIELDS if k in row}
 
 
 def customer_new_expiry(row: dict, add_days: int = 0, set_date: str = None) -> str | None:

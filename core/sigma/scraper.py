@@ -82,18 +82,34 @@ def sync_statistics(client: SigmaApiClient) -> dict:
     return {"what": "statistics", "synced": len(inner), "status": "synced"}
 
 
+def sync_servers_packages(client: SigmaApiClient) -> dict:
+    """Catálogo de servers + packages — valida o par package↔server antes
+    de um create (pacote de outro servidor dá 400 "doesn't exists")."""
+    init_db()
+    servers = client.servers()
+    save_raw(f"{SIGMA_API}/servers", servers)
+    packages = client.packages()
+    save_raw(f"{SIGMA_API}/packages/list", packages)
+    synced = save_entities("server", [(s["id"], s) for s in servers if s.get("id")])
+    synced += save_entities("package", [(p["id"], p) for p in packages if p.get("id")])
+    return {"what": "servers_packages", "synced": synced,
+            "servers": len(servers), "packages": len(packages), "status": "synced"}
+
+
 SYNCERS = {
     "customers": sync_customers,
     "expiring": sync_expiring,
     "dashboard": sync_dashboard,
     "resellers": sync_resellers,
     "statistics": sync_statistics,
+    "servers_packages": sync_servers_packages,
 }
 
 
 def sync_all(client: SigmaApiClient, pages: int = 5, per_page: int = 100) -> list[dict]:
     return [sync_customers(client, pages, per_page)] + [
-        SYNCERS[name](client) for name in ("expiring", "dashboard", "resellers", "statistics")
+        SYNCERS[name](client)
+        for name in ("expiring", "dashboard", "resellers", "statistics", "servers_packages")
     ]
 
 
@@ -101,5 +117,5 @@ def entities_summary() -> dict:
     """Contagem por kind — para status/monitoramento."""
     init_db()
     kinds = ("customer", "expiring", "dashboard_chart", "dashboard_metric",
-             "reseller", "customer_stats")
+             "reseller", "customer_stats", "server", "package")
     return {k: count_entities(k) for k in kinds}

@@ -8,11 +8,20 @@ from core.sigma.api import (
     customer_new_expiry,
     find_customer,
     open_client,
+    project_customer,
     project_response,
+    search_customers,
     set_expiry_on_payload,
 )
+from core.database import list_entities, search_entities
 from core.sigma.auth import allow_destructive, login
-from core.sigma.scraper import SYNCERS, entities_summary, sync_all, sync_customers
+from core.sigma.scraper import (
+    SYNCERS,
+    entities_summary,
+    sync_all,
+    sync_customers,
+    sync_servers_packages,
+)
 
 
 # ---- implementações síncronas (CR-01: browser/Playwright fora do event loop) --
@@ -124,7 +133,57 @@ def _resync_cliente_sigma(customer_id) -> str:
             res = client.resync_customer(customer_id)
     except Exception as e:
         return f"Resync falhou: {e}"
-    return json.dumps({"id": customer_id, "resposta": project_response(res)}, ensure_ascii=False)
+    # project_customer (não project_response): o resync devolve o row COMPLETO
+    # com password/m3u_url — só os campos públicos podem vir pro transcript.
+    return json.dumps({"id": customer_id, "cliente": project_customer(res)},
+                      ensure_ascii=False)
+
+
+def _listar_pacotes_sigma() -> str:
+    try:
+        with open_client() as client:
+            sync_servers_packages(client)
+    except Exception as e:
+        return f"Sync de pacotes falhou: {e}"
+    from core.database import list_entities as _list
+    return json.dumps(
+        {"servers": _list("server", limit=100),
+         "packages": _list("package", limit=500)},
+        ensure_ascii=False,
+    )
+
+
+def _buscar_cliente_sigma(termo: str, no_painel: bool) -> str:
+    termo = (termo or "").strip()
+    if not termo:
+        return "Informe o termo de busca (username, nome, email ou id)."
+    try:
+        if no_painel:
+            with open_client() as client:
+                rows = search_customers(client, termo)
+        else:
+            rows = search_entities("customer", termo, limit=20)
+    except Exception as e:
+        return f"Busca falhou: {e}"
+    return json.dumps(
+        {"onde": "painel" if no_painel else "banco local",
+         "total": len(rows),
+         "clientes": [project_customer(r) for r in rows]},
+        ensure_ascii=False,
+    )
+
+
+def _listar_clientes_sigma(pagina: int, por_pagina: int) -> str:
+    try:
+        rows = list_entities("customer", limit=max(1, min(por_pagina, 100)),
+                             offset=(max(1, pagina) - 1) * max(1, por_pagina))
+    except Exception as e:
+        return f"Listagem falhou: {e}"
+    return json.dumps(
+        {"pagina": pagina, "total": len(rows),
+         "clientes": [project_customer(r) for r in rows]},
+        ensure_ascii=False,
+    )
 
 
 def register(mcp):
@@ -201,5 +260,37 @@ def register(mcp):
 
     @mcp.tool()
     async def resync_cliente_sigma(customer_id: str) -> str:
-        """Força o resync do cliente no servidor IPTV do painel Sigma."""
+        """Força o resync do cliente no servidor IPTV do painel Sigma.
+        Retorna só campos públicos do cliente (nunca senha/m3u_url)."""
         return await anyio.to_thread.run_sync(_resync_cliente_sigma, customer_id)
+
+    # ---- consulta (leitura) -----------------------------------------------------
+
+    @mcp.tool()
+    async def listar_pacotes_sigma() -> str:
+        """
+        Lista servidores e pacotes do painel Sigma (sincroniza primeiro).
+        Use para achar o par package_id/server_id coerente antes de
+        criar um cliente (o pacote pertence a um servidor).
+        """
+        return await anyio.to_thread.run_sync(_listar_pacotes_sigma)
+
+    @mcp.tool()
+    async def buscar_cliente_sigma(termo: str, no_painel: bool = False) -> str:
+        """
+        Busca clientes por parte do username, nome, email ou id.
+        Padrão consulta o banco local (rápido, última sincronização);
+        no_painel=True consulta o painel ao vivo (mais lento, dados atuais).
+        Retorna apenas campos públicos.
+        """
+        return await anyio.to_thread.run_sync(_buscar_cliente_sigma, termo, no_painel)
+
+    @mcp.tool()
+    async def listar_clientes_sigma(pagina: int = 1, por_pagina: int = 20) -> str:
+        """
+        Lista clientes do banco local (mais recentemente sincronizados primeiro).
+        por_pagina cap 100. Use sincronizar_sigma('customers') antes para atualizar.
+        """
+        return await anyio.to_thread.run_sync(
+            _listar_clientes_sigma, pagina, por_pagina
+        )

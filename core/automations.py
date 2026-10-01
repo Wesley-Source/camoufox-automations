@@ -72,9 +72,9 @@ AUTOMATIONS = [
      "what": "Ciclo de vida completo de um cliente zz_test_explorer_* (guardião de URL)",
      "run": "venv/bin/python core/sigma/explore/07_test_client_lifecycle.py"},
     # ---- sigma: mapeado, ainda sem fiação -------------------------------------
-    {"id": "sigma.servers_packages.sync", "site": "sigma", "kind": "sync", "status": "planned",
+    {"id": "sigma.servers_packages.sync", "site": "sigma", "kind": "sync", "status": "ok",
      "what": "Catálogo de servers (5) e packages (128) — valida par p/ create",
-     "run": "endpoints GET /servers e /packages/list (ver PANEL_MAP.md)"},
+     "run": "main.py sigma-servers-packages"},
     {"id": "sigma.notices.sync", "site": "sigma", "kind": "sync", "status": "planned",
      "what": "Avisos/notificações do painel",
      "run": "endpoint GET /api/notices/list"},

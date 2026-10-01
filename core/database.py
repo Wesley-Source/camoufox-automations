@@ -120,3 +120,31 @@ def count_entities(kind: str = None) -> int:
         else:
             row = conn.execute("SELECT COUNT(*) FROM panel_entities").fetchone()
         return row[0]
+
+
+def _rows_to_entities(rows) -> list[dict]:
+    return [{"id": r[0], **json.loads(r[1]), "_updated_at": r[2]} for r in rows]
+
+
+def list_entities(kind: str, limit: int = 50, offset: int = 0) -> list[dict]:
+    """Entidades de um kind, mais recentes primeiro (paginação simples)."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT external_id, payload, updated_at FROM panel_entities "
+            "WHERE kind = ? ORDER BY updated_at DESC, external_id LIMIT ? OFFSET ?",
+            (kind, limit, offset),
+        ).fetchall()
+    return _rows_to_entities(rows)
+
+
+def search_entities(kind: str, term: str, limit: int = 20) -> list[dict]:
+    """Busca parcial por id ou conteúdo do payload (LIKE com escape)."""
+    like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT external_id, payload, updated_at FROM panel_entities "
+            "WHERE kind = ? AND (external_id LIKE ? ESCAPE '\\' OR payload LIKE ? ESCAPE '\\') "
+            "ORDER BY updated_at DESC, external_id LIMIT ?",
+            (kind, like, like, limit),
+        ).fetchall()
+    return _rows_to_entities(rows)

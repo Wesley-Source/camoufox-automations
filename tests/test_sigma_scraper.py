@@ -40,6 +40,15 @@ class FakeClient:
     def customers_statistics(self):
         return {"data": {"mine": {"a": 1}, "tree": [{"b": 2}]}}
 
+    def servers(self):
+        return [{"id": "srv1", "name": "Serv A"},
+                {"id": "srv2", "name": "Serv B"}]
+
+    def packages(self):
+        return [{"id": "pkg1", "name": "Pack 1", "server_id": "srv1"},
+                {"id": "pkg2", "name": "Pack 2", "server_id": "srv2"},
+                {"name": "sem_id"}]  # M4: pula row sem id
+
 
 @pytest.fixture(autouse=True)
 def tmp_db(monkeypatch, tmp_path):
@@ -91,5 +100,5 @@ def test_payload_e_json_valido():
 
 def test_sync_all_roda_tudo():
     results = sync_all(FakeClient(), pages=1)
-    assert len(results) == 5
+    assert len(results) == 6  # customers + 4 + servers_packages
     assert all(r["status"] == "synced" for r in results)
