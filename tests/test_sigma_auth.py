@@ -50,9 +50,9 @@ def test_monitor_redige_senha_generica():
     captured = []
     _attach_api_monitor(page, captured)
     page.handler(_FakeResp("https://lideriptv.sigma.st/api/customers",
-                           {"password":"Secret1"}))
+                           '{"password":"Secret1"}'))
     page.handler(_FakeResp("https://lideriptv.sigma.st/api/customers",
-                           {"note":"sem senha"}))
+                           '{"note":"sem senha"}'))
     assert captured[0]["post_data"] == "[REDACTED]"      # A2: senha genérica
     assert captured[1]["post_data"] != "[REDACTED]"      # corpo inofensivo passa
 
