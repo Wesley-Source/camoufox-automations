@@ -23,7 +23,7 @@ from core.browser import BrowserEngine
 SIGMA_URL = "https://lideriptv.sigma.st"
 SIGMA_API = SIGMA_URL + "/api"
 _BODY_SNIPPET = 4000  # ponytail: guardamos só um trecho de cada response no log
-SESSION_FILE = "sigma_session.json"
+SESSION_FILE = str(Path(__file__).resolve().parents[2] / "sigma_session.json")  # CR-25
 _VALIDATE_SETTLE = 8  # ponytail: janela p/ o SPA devolver 401 ou redirecionar; subir se o painel ficar mais lento
 
 

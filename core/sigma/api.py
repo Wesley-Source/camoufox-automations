@@ -380,12 +380,16 @@ def set_expiry_on_payload(row: dict, payload: dict, ymd: str):
     variantes que ainda circulam em alguns rows."""
     from datetime import datetime, timedelta
 
-    if "expiry_date" in row:
-        payload["expiry_date"] = ymd
-        payload.pop("due_date", None)
-    elif "expires_at" in row:
+    # CR-19: `expires_at` é o campo canônico — testa PRIMEIRO e limpa as
+    # variantes concorrentes pra não sobrar expiry velho no payload.
+    if "expires_at" in row:
         nxt = (datetime.strptime(ymd, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
         payload["expires_at"] = f"{nxt}T02:59:59.000000Z"
+        payload.pop("expiry_date", None)
+        payload.pop("due_date", None)
+    elif "expiry_date" in row:
+        payload["expiry_date"] = ymd
+        payload.pop("due_date", None)
     elif "due_date" in row:
         payload["due_date"] = ymd
     else:

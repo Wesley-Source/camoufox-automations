@@ -1,11 +1,36 @@
 import sqlite3
 import json
+from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 
-DB_PATH = "automation_data.db"
+# CR-25: ancorado na raiz do repo — cron/agentes rodando de outro cwd
+# não criam um automation_data.db fantasma.
+DB_PATH = str(Path(__file__).resolve().parents[1] / "automation_data.db")
+
+
+@contextmanager
+def _conn():
+    """Conexão que COMMITA e FECHA de verdade (CR-07: `with connect()` só
+    commita a transação, vaza conexão; contextlib.closing não commitaria)
+    + WAL e busy_timeout (CR-26)."""
+    conn = sqlite3.connect(DB_PATH, timeout=5)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        yield conn
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _now() -> str:
+    # CR-08: sqlite3 deprecou datetime direto (py3.12+) — string ISO.
+    return datetime.now().isoformat()
+
 
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
+    with _conn() as conn:
         # 1. Tabela Bruta (Raw Data Lake)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS raw_snapshots (
@@ -36,11 +61,11 @@ def init_db():
         """)
 
 def save_raw_and_clean(url: str, external_id: str, title: str, price: float, raw_data: dict):
-    with sqlite3.connect(DB_PATH) as conn:
+    with _conn() as conn:
         # Salva Raw
         conn.execute(
             "INSERT INTO raw_snapshots (url, raw_json, scraped_at) VALUES (?, ?, ?)",
-            (url, json.dumps(raw_data), datetime.now())
+            (url, json.dumps(raw_data), _now())
         )
         # UPSERT Limpo (Só atualiza se mudou)
         conn.execute("""
@@ -50,21 +75,21 @@ def save_raw_and_clean(url: str, external_id: str, title: str, price: float, raw
                 title=excluded.title,
                 price=excluded.price,
                 updated_at=excluded.updated_at
-        """, (external_id, title, price, datetime.now()))
+        """, (external_id, title, price, _now()))
 
 
 def save_raw(url: str, raw_data):
     """Snapshot bruto (raw layer) — usado pelos scrapers de painel."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with _conn() as conn:
         conn.execute(
             "INSERT INTO raw_snapshots (url, raw_json, scraped_at) VALUES (?, ?, ?)",
-            (url, json.dumps(raw_data, ensure_ascii=False, default=str), datetime.now()),
+            (url, json.dumps(raw_data, ensure_ascii=False, default=str), _now()),
         )
 
 
 def save_entity(kind: str, external_id: str, payload: dict | list):
     """UPSERT de entidade de painel (camada limpa genérica)."""
-    with sqlite3.connect(DB_PATH) as conn:
+    with _conn() as conn:
         conn.execute("""
             INSERT INTO panel_entities (kind, external_id, payload, updated_at)
             VALUES (?, ?, ?, ?)
@@ -72,11 +97,11 @@ def save_entity(kind: str, external_id: str, payload: dict | list):
                 payload=excluded.payload,
                 updated_at=excluded.updated_at
         """, (kind, str(external_id),
-              json.dumps(payload, ensure_ascii=False, default=str), datetime.now()))
+              json.dumps(payload, ensure_ascii=False, default=str), _now()))
 
 
 def count_entities(kind: str = None) -> int:
-    with sqlite3.connect(DB_PATH) as conn:
+    with _conn() as conn:
         if kind:
             row = conn.execute(
                 "SELECT COUNT(*) FROM panel_entities WHERE kind = ?", (kind,)
