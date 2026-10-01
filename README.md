@@ -84,11 +84,55 @@ main.py                 # `main.py` = CLI | `main.py mcp` = servidor MCP
 ```bash
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
 venv/bin/camoufox fetch                  # baixa o browser (~1x)
-pytest tests/                            # deve passar 20/20
-# credenciais (só em env, nunca em arquivo commitado):
+pytest tests/                            # deve passar 92/92
+# credenciais (env OU sigma_accounts.json — ver seção Multi-conta):
 export SIGMA_USERNAME=... SIGMA_PASSWORD=...
 venv/bin/python main.py sigma-login --save   # gera sigma_session.json (gitignored)
 ```
+
+## Multi-conta (várias credenciais para o mesmo painel)
+
+Credenciais em `sigma_accounts.json` (raiz, gitignored) — a ordem do arquivo é
+a prioridade:
+
+```json
+[
+  {"username": "MarcioNPTV", "password": "..."},
+  {"username": "backup_ads", "password": "..."}
+]
+```
+
+**Qual conta está ativa** (resolvida a cada comando, sem estado em memória):
+
+```
+env SIGMA_ACCOUNT  >  .sigma_last_good (ponteiro)  >  primeira do arquivo
+```
+
+- `SIGMA_ACCOUNT=backup_ads main.py sigma-status` — override por processo, **não
+  toca o ponteiro** (feito para cron/Hermes forçarem uma conta).
+- Cada conta tem sua própria sessão: a primária em `sigma_session.json`
+  (compatibilidade com tudo que já existia), as demais em
+  `.sigma_session_<usuario>.json` (gitignored).
+
+**CLI:**
+
+```bash
+venv/bin/python main.py sigma-account list          # nome | sessão ✔ | ← ativa
+venv/bin/python main.py sigma-account add NOME      # cadastra (senha oculta)
+venv/bin/python main.py sigma-account use NOME      # ponteiro; próximo comando usa
+venv/bin/python main.py sigma-account remove NOME
+venv/bin/python main.py sigma-login --user NOME     # login fresco dessa conta
+```
+
+**MCP:** `listar_contas_sigma()` (conta ativa + quem tem sessão salva, nunca
+senhas) e `trocar_conta_sigma(username)` (escreve o ponteiro e valida no painel
+via `/api/auth/me` — pode demorar ~1min se a conta estiver sem sessão).
+
+Comportamento: failover de sessão acontece só no boot (tenta a ativa, depois as
+demais — trocar de conta não força novo login se a sessão dela está boa);
+relogin usa somente a conta ativa. `SIGMA_PROXY` vale para todas (cf_clearance
+é IP-bound: todas as contas devem sair pelo mesmo egress). Sem o arquivo de
+contas, tudo funciona como antes (env creds → modo legado).
 
 ## Como a IA deve operar (receita)
 
@@ -116,19 +160,21 @@ Fonte viva: `core/automations.py` (este espelho pode envelhecer; o comando
 
 | Status | Qtd | Exemplos |
 |---|---|---|
-| `ok` | 20 | login, sync (customers/expiring/dashboard/resellers/statistics/all), status, CRUD de cliente (create/update/delete/resync), 7 exploradores, demo ecommerce |
-| `planned` | 6 | servers+packages, notices, top10, ai-analysis, export CSV, restore |
+| `ok` | 21 | login (multi-conta), sync (customers/expiring/dashboard/resellers/statistics/servers+packages/all), status, CRUD de cliente (create/update/delete/resync), 7 exploradores, demo ecommerce |
+| `planned` | 5 | notices, top10, ai-analysis, export CSV, restore |
 | `blocked` | 3 | BotBot/mensagens, bulk (mass-delete/move/migration), financeiro |
 
 ## Interfaces
 
-**CLI** (`venv/bin/python main.py <comando>`): `automations`, `sigma-login`,
-`sigma-sync`, `sigma-status`, `sigma-servers-packages`,
+**CLI** (`venv/bin/python main.py <comando>`): `automations`, `sigma-login
+[--user NOME]`, `sigma-account list|use|add|remove`, `sigma-sync`,
+`sigma-status`, `sigma-servers-packages`,
 `sigma-customer-create|update|delete|resync`, `sync-item`. MCP (`main.py mcp`):
 `listar_automacoes`, `login_sigma`, `sincronizar_sigma`, `status_sigma`,
 `criar_cliente_sigma`, `editar_cliente_sigma`, `excluir_cliente_sigma`,
 `resync_cliente_sigma`, `listar_pacotes_sigma`, `buscar_cliente_sigma`,
-`listar_clientes_sigma`, `consultar_e_sincronizar_produto`.
+`listar_clientes_sigma`, `listar_contas_sigma`, `trocar_conta_sigma`,
+`consultar_e_sincronizar_produto`.
 
 ### Paridade CLI ↔ MCP
 
