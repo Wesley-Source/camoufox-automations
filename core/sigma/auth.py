@@ -136,54 +136,64 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
     """
     Como logged_page, mas reutiliza a sessão salva se ainda válida.
 
-    Cascata: sessão válida → reutiliza | inválida/expirada → avisa e refaz
-    login (exigindo username/password ou env SIGMA_USERNAME/SIGMA_PASSWORD)
-    e atualiza o arquivo de sessão. Sempre imprime o que fez.
-    O namespace devolvido tem .reused: bool.
+    CR-03: single-launch — UM browser para toda a vida do contexto. Valida
+    a sessão via fetch na própria página e, se morta, refaz o login NA
+    MESMA página (validar via HTTP puro não é opção: CF bloqueia requests).
+    Requer username/password ou env SIGMA_USERNAME/SIGMA_PASSWORD no caminho
+    de relogin; atualiza o arquivo de sessão. .reused: bool.
+
+    ponytail (CR-27): o guard entra após a verificação de validade — a
+    janela de validação é só código nosso de leitura (goto + fetch GET);
+    instalar guard antes abortaria POSTs do próprio SPA durante a validação
+    e causaria falso negativo -> relogin desperdiçado.
     """
     username = username or os.environ.get("SIGMA_USERNAME")
     password = password or os.environ.get("SIGMA_PASSWORD")
 
     saved = load_session(session_path)
-    if saved:
-        with BrowserEngine.get_page(proxy or default_proxy()) as page:
-            captured: list = []
-            _attach_api_monitor(page, captured)
+
+    with BrowserEngine.get_page(proxy or default_proxy()) as page:
+        captured: list = []
+        _attach_api_monitor(page, captured)
+
+        reused = False
+        if saved:
             _restore_session(page, saved)
             if _session_still_valid(page, captured, saved["token"]):
-                blocked = guard(page) if guard else []
-                typer.secho(f"✔ Sessão reutilizada ({session_path}).", fg=typer.colors.GREEN)
-                yield SimpleNamespace(
-                    page=page, token=saved["token"], captured=captured,
-                    blocked=blocked, reused=True,
+                reused = True
+
+        if reused:
+            blocked = guard(page) if guard else []
+            typer.secho(f"✔ Sessão reutilizada ({session_path}).", fg=typer.colors.GREEN)
+            token = saved["token"]
+        else:
+            if saved:
+                typer.secho("⚠ Sessão salva inválida ou expirada — refazendo login...", fg=typer.colors.YELLOW)
+            else:
+                typer.secho(f"ℹ Sem sessão salva em {session_path} — logando...", fg=typer.colors.YELLOW)
+            if not (username and password):
+                raise RuntimeError(
+                    "Sem sessão válida e sem credenciais. Defina SIGMA_USERNAME/SIGMA_PASSWORD "
+                    "ou rode: venv/bin/python main.py sigma-login --save"
                 )
-                return
+            _login_flow(page, username, password, captured)
+            blocked = guard(page) if guard else []
+            token = page.evaluate("() => localStorage.getItem('token')")
+            save_session(
+                {
+                    "token": token,
+                    "cookies": page.context.cookies(),
+                    "local_storage": page.evaluate(
+                        "() => Object.fromEntries(Object.entries(localStorage))"
+                    ),
+                },
+                session_path,
+            )
+            typer.secho(f"✔ Login completo; sessão atualizada em {session_path}.", fg=typer.colors.GREEN)
 
-    if saved:
-        typer.secho("⚠ Sessão salva inválida ou expirada — refazendo login...", fg=typer.colors.YELLOW)
-    else:
-        typer.secho(f"ℹ Sem sessão salva em {session_path} — logando...", fg=typer.colors.YELLOW)
-    if not (username and password):
-        raise RuntimeError(
-            "Sem sessão válida e sem credenciais. Defina SIGMA_USERNAME/SIGMA_PASSWORD "
-            "ou rode: venv/bin/python main.py sigma-login --save"
-        )
-
-    with logged_page(username, password, proxy or default_proxy(), guard) as s:
-        save_session(
-            {
-                "token": s.token,
-                "cookies": s.page.context.cookies(),
-                "local_storage": s.page.evaluate(
-                    "() => Object.fromEntries(Object.entries(localStorage))"
-                ),
-            },
-            session_path,
-        )
-        typer.secho(f"✔ Login completo; sessão atualizada em {session_path}.", fg=typer.colors.GREEN)
         yield SimpleNamespace(
-            page=s.page, token=s.token, captured=s.captured,
-            blocked=s.blocked, reused=False,
+            page=page, token=token, captured=captured,
+            blocked=blocked, reused=reused,
         )
 
 
