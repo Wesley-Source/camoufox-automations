@@ -223,3 +223,24 @@ def test_multi_env_sigma_account_escolhe_sem_tocar_ponteiro(multi_env, monkeypat
         assert s.account == "beta"
     # env NÃO grava ponteiro (é override por processo)
     assert auth_mod._read_last_good() is None
+
+
+# ---- MCP: listar/trocar conta ----------------------------------------------
+
+def test_mcp_listar_contas_sem_senhas(multi_env, monkeypatch):
+    from interfaces.mcp.sigma import _listar_contas_sigma
+    monkeypatch.setattr("interfaces.mcp.sigma.load_accounts", lambda: ACC)
+    monkeypatch.setattr("interfaces.mcp.sigma.load_session", lambda p: None)
+    monkeypatch.setattr("interfaces.mcp.sigma.resolve_active_account", lambda a: ACC[0])
+    import json
+    data = json.loads(_listar_contas_sigma())
+    assert data["contas"][0]["username"] == "alpha" and data["contas"][0]["ativa"] is True
+    assert "password" not in str(data)
+
+
+def test_mcp_trocar_conta_inexistente_recusa(multi_env, monkeypatch):
+    from interfaces.mcp.sigma import _trocar_conta_sigma
+    monkeypatch.setattr("interfaces.mcp.sigma.load_accounts", lambda: ACC)
+    monkeypatch.setattr("interfaces.mcp.sigma.set_last_good", lambda u: None)
+    res = _trocar_conta_sigma("fantasma")
+    assert "não cadastrada" in res

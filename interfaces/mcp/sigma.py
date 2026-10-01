@@ -15,7 +15,15 @@ from core.sigma.api import (
     set_expiry_on_payload,
 )
 from core.database import list_entities, search_entities
-from core.sigma.auth import allow_destructive, login
+from core.sigma.auth import (
+    allow_destructive,
+    load_accounts,
+    load_session,
+    login,
+    resolve_active_account,
+    session_path_for,
+    set_last_good,
+)
 from core.sigma.scraper import (
     SYNCERS,
     entities_summary,
@@ -68,6 +76,48 @@ def _status_sigma() -> str:
             "conta_expira_em": me.get("membership_expiry_date") or "ilimitado",
             "banco_local": entities_summary(),
         },
+        ensure_ascii=False,
+    )
+
+
+def _listar_contas_sigma() -> str:
+    accounts = load_accounts()
+    if not accounts:
+        return json.dumps(
+            {"contas": [], "nota": "Nenhuma conta em sigma_accounts.json/env. "
+             "Cadastre com: main.py sigma-account add NOME"},
+            ensure_ascii=False,
+        )
+    active = resolve_active_account(accounts)
+    return json.dumps(
+        {
+            "contas": [
+                {
+                    "username": a["username"],
+                    "ativa": bool(active and a["username"] == active["username"]),
+                    "sessao_salva": load_session(session_path_for(a["username"], accounts)) is not None,
+                }
+                for a in accounts
+            ]
+        },
+        ensure_ascii=False,
+    )
+
+
+def _trocar_conta_sigma(username: str) -> str:
+    accounts = load_accounts()
+    if username not in {a["username"] for a in accounts}:
+        return (f"Conta '{username}' não cadastrada. "
+                f"Cadastre com: main.py sigma-account add {username}")
+    set_last_good(username)
+    try:
+        with open_client() as client:
+            me = client.me()
+    except Exception as e:
+        return (f"Ponteiro movido para {username}, mas a validação falhou "
+                f"(sessão morta ou login demorou): {e}")
+    return json.dumps(
+        {"conta_ativa": username, "verificado_como": me.get("username")},
         ensure_ascii=False,
     )
 
@@ -323,6 +373,37 @@ def register(mcp):
         catálogo grande (~128 pacotes). Paridade CLI: sigma-servers-packages.
         """
         return await anyio.to_thread.run_sync(_listar_pacotes_sigma)
+
+    @mcp.tool()
+    async def listar_contas_sigma() -> str:
+        """
+        Use quando: precisar saber quais contas do painel Sigma estão
+        cadastradas, qual está ativa e qual tem sessão salva.
+
+        Retorna: JSON {contas: [{username, ativa, sessao_salva}]} — NUNCA
+        senhas.
+
+        Cuidados: leitura local (sem browser, instantâneo). A ativa segue a
+        resolução SIGMA_ACCOUNT > ponteiro > primeira do arquivo. Paridade
+        CLI: sigma-account list.
+        """
+        return await anyio.to_thread.run_sync(_listar_contas_sigma)
+
+    @mcp.tool()
+    async def trocar_conta_sigma(username: str) -> str:
+        """
+        Use quando: o DONO pedir explicitamente operar com outra conta
+        cadastrada.
+
+        Retorna: JSON {conta_ativa, verificado_como} após validar /api/auth/me
+        no painel.
+
+        Cuidados: muda o ponteiro GLOBAL (afeta cron e outros processos);
+        se a conta não tiver sessão salva, dispara login no browser
+        (~1min). Nunca peça nem repasse senhas — cadastro é via CLI
+        sigma-account add. Paridade CLI: sigma-account use.
+        """
+        return await anyio.to_thread.run_sync(_trocar_conta_sigma, username)
 
     @mcp.tool()
     async def buscar_cliente_sigma(termo: str, no_painel: bool = False) -> str:
