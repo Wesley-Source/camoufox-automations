@@ -175,14 +175,16 @@ class SigmaApiClient:
     def __init__(self, token: str = None, session_path: str = SESSION_FILE,
                  transport=None):
         self.session_path = session_path
+        # atributo existe desde o boot: _ensure_token -> _status_of faz swap
+        # de self.token antes do __init__ terminar de defini-lo.
         self._doh_ip: str | None = None
         self._doh_ts: float = 0.0
+        self.token = token
         self._browser = transport is not None
         self._session = transport if transport is not None else requests.Session()
         if not self._browser:
             self._session.headers["User-Agent"] = _UA
         if token:
-            self.token = token
             self._apply_session_cookies(load_session(session_path))
         else:
             self.token = self._ensure_token()
