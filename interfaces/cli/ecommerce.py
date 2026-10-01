@@ -12,3 +12,4 @@ def register(app: typer.Typer):
             typer.secho(f"✔ Sucesso: {res}", fg=typer.colors.GREEN)
         except Exception as e:
             typer.secho(f"✖ Erro: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)  # CR-11: falha não pode sair como sucesso
