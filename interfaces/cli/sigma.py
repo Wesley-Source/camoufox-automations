@@ -1,10 +1,22 @@
 import json
 import os
 import secrets
+from pathlib import Path
 
 import typer
 
-from core.sigma.auth import SESSION_FILE, allow_destructive, login, save_session
+from core.sigma.auth import (
+    ACCOUNTS_FILE,
+    SESSION_FILE,
+    allow_destructive,
+    load_accounts,
+    load_session,
+    login,
+    resolve_active_account,
+    save_session,
+    session_path_for,
+    set_last_good,
+)
 from core.sigma.api import (
     customer_new_expiry,
     find_customer,
@@ -23,21 +35,120 @@ from core.sigma.scraper import (
 )
 
 
+def _read_file_accounts() -> list:
+    """Contas do ARQUIVO (sem merge de env) — para add/remove."""
+    try:
+        data = json.loads(Path(ACCOUNTS_FILE).read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _write_file_accounts(accs: list) -> None:
+    fd = os.open(ACCOUNTS_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(accs, f, indent=2, ensure_ascii=False)
+
+
+def _has_saved_session(username: str, accounts: list) -> bool:
+    return load_session(session_path_for(username, accounts)) is not None
+
+
 def register(app: typer.Typer):
+    @app.command("sigma-account")
+    def cli_sigma_account(
+        action: str = typer.Argument(..., help="list|use|add|remove"),
+        name: str = typer.Argument(None, help="Username (use/add/remove)."),
+    ):
+        """
+        Gerencia as contas do multi-conta (fonte: sigma_accounts.json, 0600).
+
+        Use quando: cadastrar credenciais ou trocar a conta ativa.
+        Retorna: lista (nome | sessão | ativa — NUNCA senhas), confirmação.
+        Cuidados: 'use' só move o ponteiro .sigma_last_good (próximo
+        comando já nasce na conta); 'add' pede a senha oculta.
+        """
+        if action == "list":
+            accounts = load_accounts()
+            if not accounts:
+                typer.echo("Nenhuma conta cadastrada (sigma_accounts.json + env).")
+                raise typer.Exit(0)
+            active = resolve_active_account(accounts)
+            for a in accounts:
+                u = a["username"]
+                has_sess = "✔" if _has_saved_session(u, accounts) else "–"
+                mark = " ← ativa" if active and u == active["username"] else ""
+                typer.echo(f"  {u:20s} sessão: {has_sess}{mark}")
+            return
+
+
+        if action == "use":
+            if not name:
+                typer.secho("✖ Uso: sigma-account use NOME", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            if name not in {a["username"] for a in load_accounts()}:
+                typer.secho(f"✖ Conta {name} não cadastrada.", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            set_last_good(name)
+            typer.secho(f"✔ Conta ativa: {name} (próximo comando já usa).", fg=typer.colors.GREEN)
+            return
+
+        if action == "add":
+            if not name:
+                typer.secho("✖ Uso: sigma-account add NOME", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            accs = _read_file_accounts()
+            if any(a.get("username") == name for a in accs):
+                typer.secho(f"✖ {name} já está no arquivo.", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            pwd = typer.prompt(f"Senha de {name}", hide_input=True)
+            accs.append({"username": name, "password": pwd})
+            _write_file_accounts(accs)
+            typer.secho(f"✔ Conta {name} cadastrada em {ACCOUNTS_FILE} (0600).", fg=typer.colors.GREEN)
+            return
+
+        if action == "remove":
+            if not name:
+                typer.secho("✖ Uso: sigma-account remove NOME", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            accs = _read_file_accounts()
+            kept = [a for a in accs if a.get("username") != name]
+            if len(kept) == len(accs):
+                typer.secho(f"✖ {name} não está no arquivo.", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            _write_file_accounts(kept)
+            typer.secho(f"✔ Conta {name} removida.", fg=typer.colors.GREEN)
+            return
+
+        typer.secho(f"✖ Ação inválida: {action}. Use list|use|add|remove.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
     @app.command("sigma-login")
-    def cli_sigma_login(save: bool = False):
+    def cli_sigma_login(
+        save: bool = False,
+        user: str = typer.Option(None, "--user", help="Login fresco desta conta cadastrada."),
+    ):
         """
         Login FRESCO no painel Sigma (as outras forças reutilizam a sessão salva).
 
-        Use quando: sessão morta e sem env pra relogin automático.
+        Use quando: sessão morta e sem env pra relogin automático; --user
+        NOME loga uma conta do sigma_accounts.json (e a torna ativa).
         Retorna: token mascarado (16 chars; CR-14 — completo não vai pro histórico).
-        Cuidados: --save grava sessão 0600 (atômica); não copie o arquivo
-        entre máquinas — cf_clearance é IP-bound.
+        Cuidados: --save grava sessão 0600 (atômica) no arquivo DA CONTA;
+        não copie sessões entre máquinas — cf_clearance é IP-bound.
         """
-        username = os.environ.get("SIGMA_USERNAME")
-        password = os.environ.get("SIGMA_PASSWORD")
+        accounts = load_accounts()
+        if user:
+            acc = next((a for a in accounts if a["username"] == user), None)
+            if not acc:
+                typer.secho(f"✖ Conta {user} não está em {ACCOUNTS_FILE}.", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            username, password = acc["username"], acc["password"]
+        else:
+            username = os.environ.get("SIGMA_USERNAME")
+            password = os.environ.get("SIGMA_PASSWORD")
         if not username or not password:
-            typer.secho("✖ Defina SIGMA_USERNAME e SIGMA_PASSWORD no ambiente.", fg=typer.colors.RED)
+            typer.secho("✖ Defina SIGMA_USERNAME e SIGMA_PASSWORD (ou use --user NOME).", fg=typer.colors.RED)
             raise typer.Exit(1)
         try:
             sess = login(username, password)
@@ -50,8 +161,11 @@ def register(app: typer.Typer):
         )  # CR-14: token completo não vai pro stdout/histórico
         if save:
             # B1: mesma via do CR-12 (0600 + troca atômica) — open() cru gravava 0644
-            save_session(sess, SESSION_FILE)
-            typer.secho(f"✔ Sessão completa salva em {SESSION_FILE}", fg=typer.colors.GREEN)
+            path = session_path_for(username, accounts) if accounts else SESSION_FILE
+            save_session(sess, path, username=username if accounts else None)
+            if accounts:
+                set_last_good(username)
+            typer.secho(f"✔ Sessão completa salva em {path}", fg=typer.colors.GREEN)
 
     @app.command("sigma-sync")
     def cli_sigma_sync(
@@ -102,7 +216,10 @@ def register(app: typer.Typer):
             typer.secho(f"✖ Sigma inacessível: {e}", fg=typer.colors.RED)
             raise typer.Exit(1)
         expiry = me.get("membership_expiry_date")
-        typer.secho(f"✔ Usuário: {me.get('username')} | Conta/membership expira: {expiry or 'ilimitado'}", fg=typer.colors.GREEN)
+        accounts = load_accounts()
+        active = resolve_active_account(accounts) if accounts else None
+        conta = f" | Conta ativa: {active['username']}" if active else ""
+        typer.secho(f"✔ Usuário: {me.get('username')}{conta} | Conta/membership expira: {expiry or 'ilimitado'}", fg=typer.colors.GREEN)
         for kind, n in entities_summary().items():
             typer.echo(f"  {kind:18s} {n}")
 

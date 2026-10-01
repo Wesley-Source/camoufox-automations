@@ -46,6 +46,9 @@ def test_cli_login_save_usa_save_session(tmp_path, monkeypatch):  # B1
             "captured": [], "local_storage": {}}
     monkeypatch.setenv("SIGMA_USERNAME", "u")
     monkeypatch.setenv("SIGMA_PASSWORD", "p")
+    # multi-conta: força modo legado (sem accounts) p/ exercitar o caminho
+    # do SESSION_FILE monkeypatchado — nunca o arquivo real do repo.
+    monkeypatch.setattr("interfaces.cli.sigma.load_accounts", lambda: [])
     monkeypatch.setattr("interfaces.cli.sigma.login", lambda u, p: sess)
     target = tmp_path / "sigma_session.json"
     monkeypatch.setattr("interfaces.cli.sigma.SESSION_FILE", str(target))
