@@ -29,15 +29,15 @@ def _login_sigma() -> str:
     return f"Token Sigma: {sess['token']}"
 
 
-def _sincronizar_sigma(o_que: str, paginas: int) -> str:
+def _sincronizar_sigma(o_que: str, paginas: int, per_page: int) -> str:
     if o_que not in (*SYNCERS, "all"):
         return f"'o_que' inválido: {o_que}. Opções: {', '.join([*SYNCERS, 'all'])}"
     try:
         with open_client() as client:
             if o_que == "all":
-                results = sync_all(client, paginas)
+                results = sync_all(client, paginas, per_page)
             elif o_que == "customers":
-                results = [sync_customers(client, paginas)]
+                results = [sync_customers(client, paginas, per_page)]
             else:
                 results = [SYNCERS[o_que](client)]
     except Exception as e:
@@ -61,11 +61,11 @@ def _status_sigma() -> str:
     )
 
 
-def _criar_cliente_sigma(username, package_id, server_id, connections, password) -> str:
+def _criar_cliente_sigma(username, package_id, server_id, connections, password, name, email) -> str:
     pwd = password or secrets.token_urlsafe(12)
     payload = {
         "username": username, "password": pwd, "password_confirmation": pwd,
-        "name": username, "email": f"{username}@local.test",
+        "name": name or username, "email": email or f"{username}@local.test",
         "connections": connections, "server_id": server_id, "package_id": package_id,
     }
     try:
@@ -77,9 +77,9 @@ def _criar_cliente_sigma(username, package_id, server_id, connections, password)
     return json.dumps({"criado": username, "id": cid or "?", "senha": pwd}, ensure_ascii=False)
 
 
-def _editar_cliente_sigma(customer_id, note, add_days) -> str:
-    if not (note or add_days):
-        return "Nada a mudar: informe note e/ou add_days."
+def _editar_cliente_sigma(customer_id, note, add_days, set_expiry) -> str:
+    if not (note or add_days or set_expiry):
+        return "Nada a mudar: informe note, add_days e/ou set_expiry (YYYY-MM-DD)."
     try:
         with open_client() as client:
             row = find_customer(client, customer_id)
@@ -89,8 +89,8 @@ def _editar_cliente_sigma(customer_id, note, add_days) -> str:
             if note:
                 payload["note"] = note
             new_exp = None
-            if add_days:
-                new_exp = customer_new_expiry(row, add_days)
+            if add_days or set_expiry:
+                new_exp = customer_new_expiry(row, add_days, set_date=set_expiry)
                 if not new_exp:
                     return "Row sem data de expiração — não dá para estender."
                 set_expiry_on_payload(row, payload, new_exp)
@@ -133,13 +133,13 @@ def register(mcp):
         return await anyio.to_thread.run_sync(_login_sigma)
 
     @mcp.tool()
-    async def sincronizar_sigma(o_que: str, paginas: int = 5) -> str:
+    async def sincronizar_sigma(o_que: str, paginas: int = 5, per_page: int = 100) -> str:
         """
         Sincroniza dados do painel Sigma para o banco local (somente leitura).
         o_que: customers | expiring | dashboard | resellers | statistics | all.
-        paginas: páginas de clientes quando aplicável.
+        paginas: páginas de clientes quando aplicável; per_page: linhas por página (cap 100).
         """
-        return await anyio.to_thread.run_sync(_sincronizar_sigma, o_que, paginas)
+        return await anyio.to_thread.run_sync(_sincronizar_sigma, o_que, paginas, per_page)
 
     @mcp.tool()
     async def status_sigma() -> str:
@@ -158,23 +158,32 @@ def register(mcp):
         server_id: str,
         connections: int = 1,
         password: str = None,
+        name: str = None,
+        email: str = None,
     ) -> str:
         """
         Cria um cliente no painel Sigma. package_id e server_id são IDs string
         do painel (ex.: rdqLkQjWAE) e devem formar par coerente (o pacote
-        pertence ao servidor). Senha gerada se não informada.
+        pertence ao servidor). Senha gerada se não informada; name/email
+        padrão derivados do username.
         """
         return await anyio.to_thread.run_sync(
-            _criar_cliente_sigma, username, package_id, server_id, connections, password
+            _criar_cliente_sigma, username, package_id, server_id,
+            connections, password, name, email,
         )
 
     @mcp.tool()
-    async def editar_cliente_sigma(customer_id: str, note: str = None, add_days: int = 0) -> str:
+    async def editar_cliente_sigma(
+        customer_id: str, note: str = None, add_days: int = 0, set_expiry: str = None
+    ) -> str:
         """
-        Edita um cliente do painel Sigma: altera a nota e/ou estende a expiração
-        em add_days dias. Ao menos um dos dois deve ser informado.
+        Edita um cliente do painel Sigma: altera a nota e/ou define a expiração
+        (add_days dias a partir da atual, ou set_expiry "YYYY-MM-DD" direto).
+        Ao menos um dos três deve ser informado.
         """
-        return await anyio.to_thread.run_sync(_editar_cliente_sigma, customer_id, note, add_days)
+        return await anyio.to_thread.run_sync(
+            _editar_cliente_sigma, customer_id, note, add_days, set_expiry
+        )
 
     @mcp.tool()
     async def excluir_cliente_sigma(customer_id: str, confirmar: bool = False) -> str:
