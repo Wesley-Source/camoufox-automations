@@ -27,6 +27,7 @@ import typer
 from core.sigma.auth import (
     SIGMA_API,
     SIGMA_URL,
+    SESSION_FILE,
     ensure_logged_page,
     default_proxy,
     load_session,
@@ -155,7 +156,7 @@ class SigmaApiClient:
     Produção: use `open_client()`, que injeta o transporte do browser.
     """
 
-    def __init__(self, token: str = None, session_path: str = "sigma_session.json",
+    def __init__(self, token: str = None, session_path: str = SESSION_FILE,
                  transport=None):
         self.session_path = session_path
         self._doh_ip: str | None = None
@@ -362,10 +363,13 @@ def customer_new_expiry(row: dict, add_days: int = 0, set_date: str = None) -> s
 
     if set_date:
         base = datetime.strptime(set_date, "%Y-%m-%d")
+    elif row.get("expires_at"):
+        # A4: canônico primeiro (o writer set_expiry_on_payload trata
+        # expires_at como canônico — ler na mesma ordem, senão row com
+        # ambas as chaves renova a partir da data velha).
+        base = datetime.strptime(row["expires_at"][:10], "%Y-%m-%d") - timedelta(days=1)
     elif row.get("expiry_date"):
         base = datetime.strptime(row["expiry_date"][:10], "%Y-%m-%d")
-    elif row.get("expires_at"):
-        base = datetime.strptime(row["expires_at"][:10], "%Y-%m-%d") - timedelta(days=1)
     elif row.get("due_date"):
         base = datetime.strptime(row["due_date"][:10], "%Y-%m-%d")
     else:
@@ -397,7 +401,7 @@ def set_expiry_on_payload(row: dict, payload: dict, ymd: str):
 
 
 @contextmanager
-def open_client(session_path: str = "sigma_session.json", proxy: str = None):
+def open_client(session_path: str = SESSION_FILE, proxy: str = None):
     """
     Cliente com transporte do browser (o único que o Cloudflare aceita).
 
@@ -405,9 +409,10 @@ def open_client(session_path: str = "sigma_session.json", proxy: str = None):
     login), injeta cookies no contexto e devolve o client. As chamadas
     /api/* passam pelo TLS real do Firefox sem renderizar página.
 
-    proxy: se None, usa SIGMA_PROXY do ambiente (ex. Termux+microsocks
-    via Tailscale: socks5://100.x.y.z:1080). cf_clearance é IP-bound —
-    mantenha o caminho estável depois do primeiro login.
+    session_path: default SESSION_FILE, ancorado em __file__ (A1: default
+    relativo quebrava cron/CWD≠raiz). proxy: se None, usa SIGMA_PROXY do
+    ambiente (ex. Termux+microsocks via Tailscale: socks5://100.x.y.z:1080).
+    cf_clearance é IP-bound — mantenha o caminho estável depois do primeiro login.
     """
     with ensure_logged_page(session_path=session_path,
                             proxy=proxy or default_proxy()) as s:
