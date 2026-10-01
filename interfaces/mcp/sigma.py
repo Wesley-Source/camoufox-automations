@@ -10,7 +10,7 @@ from core.sigma.api import (
     open_client,
     set_expiry_on_payload,
 )
-from core.sigma.auth import login
+from core.sigma.auth import allow_destructive, login
 from core.sigma.scraper import SYNCERS, entities_summary, sync_all, sync_customers
 
 
@@ -103,6 +103,9 @@ def _editar_cliente_sigma(customer_id, note, add_days) -> str:
 def _excluir_cliente_sigma(customer_id, confirmar) -> str:
     if not confirmar:
         return "Exclusão exige confirmar=True (soft delete)."
+    if not allow_destructive():
+        return ("CR-10: exclusão exige SIGMA_ALLOW_DESTRUCTIVE=1 no ambiente "
+                "(confirmar preenchido pelo próprio agente não é confirmação).")
     try:
         with open_client() as client:
             res = client.delete_customer(customer_id)

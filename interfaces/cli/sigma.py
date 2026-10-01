@@ -4,7 +4,7 @@ import secrets
 
 import typer
 
-from core.sigma.auth import SESSION_FILE, login
+from core.sigma.auth import SESSION_FILE, allow_destructive, login
 from core.sigma.api import (
     customer_new_expiry,
     find_customer,
@@ -150,6 +150,10 @@ def register(app: typer.Typer):
         """Remove um cliente (SOFT delete — restaurável via POST /customers/restore)."""
         if not yes:
             typer.secho("✖ Destrutivo: confirme com --yes.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        if not allow_destructive():
+            typer.secho("✖ CR-10: destrutivo exige SIGMA_ALLOW_DESTRUCTIVE=1 no ambiente.",
+                        fg=typer.colors.RED)
             raise typer.Exit(1)
         try:
             with open_client() as client:

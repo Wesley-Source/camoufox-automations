@@ -206,6 +206,15 @@ def default_proxy() -> str | None:
     return os.environ.get("SIGMA_PROXY") or None
 
 
+def allow_destructive() -> bool:
+    """CR-10: mutação destrutiva exige SIGMA_ALLOW_DESTRUCTIVE=1 no ambiente.
+
+    'confirmar=True' preenchido pelo próprio LLM não é confirmação — o gate
+    só abre com a variável setada por um humano.
+    """
+    return os.environ.get("SIGMA_ALLOW_DESTRUCTIVE") == "1"
+
+
 @contextmanager
 def logged_page(username: str, password: str, proxy: str = None, guard=None):
     """
