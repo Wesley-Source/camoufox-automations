@@ -267,7 +267,7 @@ def test_ensure_relogin_na_mesma_pagina_salva_sessao(monkeypatch, no_proxy_env):
     monkeypatch.setenv("SIGMA_USERNAME", "u")
     monkeypatch.setenv("SIGMA_PASSWORD", "p")
     saved = []
-    monkeypatch.setattr(auth_mod, "save_session", lambda s, p: saved.append(s))
+    monkeypatch.setattr(auth_mod, "save_session", lambda s, p, username=None: saved.append(s))
     page = FakePage(evaluates=["new|tok", {}])
     get_page, launches = fake_engine(page)
     monkeypatch.setattr(auth_mod, "BrowserEngine",

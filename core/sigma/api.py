@@ -487,7 +487,9 @@ def open_client(session_path: str = SESSION_FILE, proxy: str = None, guard=None)
     with ensure_logged_page(session_path=session_path,
                             proxy=proxy or default_proxy(), guard=guard) as s:
         transport = _BrowserTransport(s.page, extra_headers=_AXIOS_HEADERS)
-        yield SigmaApiClient(token=s.token, session_path=session_path, transport=transport)
+        # s.session_path é o caminho RESOLVIDO (multi-conta: pode ser o
+        # dotfile de uma conta secundária) — _ensure_token recarrega dele.
+        yield SigmaApiClient(token=s.token, session_path=s.session_path, transport=transport)
 
 
 def project_response(res) -> dict:

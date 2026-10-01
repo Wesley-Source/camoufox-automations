@@ -19,11 +19,16 @@ logs/
 # Pytest
 .pytest_cache/
 
+# Credenciais e artefatos de sessão multi-conta
+sigma_accounts.json
+.sigma_last_good
+.sigma_session_*.json
+
 # Sessões e capturas de exploração (contêm token/PII)
 sigma_session.json
+sigma_session.lock
 core/*/explore/out/
 /out/
 
 # Grafo gerado
 graphify-out/
-sigma_session.lock

@@ -24,7 +24,9 @@ from core.browser import BrowserEngine
 SIGMA_URL = "https://lideriptv.sigma.st"
 SIGMA_API = SIGMA_URL + "/api"
 _BODY_SNIPPET = 4000  # ponytail: guardamos só um trecho de cada response no log
-SESSION_FILE = str(Path(__file__).resolve().parents[2] / "sigma_session.json")  # CR-25
+SESSION_FILE = str(Path(__file__).resolve().parents[2] / "sigma_session.json")
+ACCOUNTS_FILE = str(Path(__file__).resolve().parents[2] / "sigma_accounts.json")
+LAST_GOOD_FILE = str(Path(__file__).resolve().parents[2] / ".sigma_last_good")  # CR-25
 _VALIDATE_SETTLE = 8  # ponytail: janela p/ o SPA devolver 401 ou redirecionar; subir se o painel ficar mais lento
 
 
@@ -90,16 +92,91 @@ def load_session(path: str = SESSION_FILE) -> dict | None:
     return s if s.get("token") and s.get("cookies") else None
 
 
-def save_session(sess: dict, path: str = SESSION_FILE) -> None:
+def save_session(sess: dict, path: str = SESSION_FILE, username: str = None) -> None:
     """CR-12: 0600 + troca atômica — token+cookies nunca ficam legíveis para
     grupo/outros nem pela metade escritos. M3: tmp por-pid (duas corridas
     não se truncam) e arquivo nasce 0600 (sem janela write→chmod)."""
+    if username:
+        sess = {**sess, "username": username}
     p = Path(path)
     tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(sess, f, indent=2, ensure_ascii=False)
     os.replace(tmp, p)
+
+
+# ---- multi-conta -----------------------------------------------------------
+
+def load_accounts(path: str = None) -> list:
+    """[{username, password}] de sigma_accounts.json + env (env entra como
+    primeira entrada se ainda não estiver no arquivo). Ordem = prioridade.
+    path=None resolve ACCOUNTS_FILE na chamada (testável via monkeypatch)."""
+    path = path or ACCOUNTS_FILE
+    """Contas cadastradas [{username, password}] — ordem do arquivo = prioridade.
+
+    SIGMA_USERNAME/SIGMA_PASSWORD (quando setados e ainda não presentes)
+    entram como PRIMEIRA entrada — compat com o modo antigo. Arquivo
+    ausente/corrompido = só env. Lista vazia = modo single-account legado.
+    """
+    accounts: list = []
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            for a in raw:
+                if isinstance(a, dict) and a.get("username") and a.get("password"):
+                    accounts.append({"username": a["username"], "password": a["password"]})
+    except Exception:
+        pass
+    env_u = os.environ.get("SIGMA_USERNAME")
+    env_p = os.environ.get("SIGMA_PASSWORD")
+    if env_u and env_p and not any(a["username"] == env_u for a in accounts):
+        accounts.insert(0, {"username": env_u, "password": env_p})
+    return accounts
+
+
+def session_path_for(username: str | None, accounts: list | None = None) -> str:
+    """Sessão da conta PRIMÁRIA continua em SESSION_FILE (zero migração);
+    as demais viram dotfiles .sigma_session_<usuario>.json."""
+    if not username:
+        return SESSION_FILE
+    accounts = accounts if accounts is not None else load_accounts()
+    if accounts and username == accounts[0]["username"]:
+        return SESSION_FILE
+    return str(Path(SESSION_FILE).parent / f".sigma_session_{username}.json")
+
+
+def _read_last_good(path: str = None) -> str | None:
+    path = path or LAST_GOOD_FILE
+    try:
+        return Path(path).read_text(encoding="utf-8").strip() or None
+    except Exception:
+        return None
+
+
+def set_last_good(username: str, path: str = None) -> None:
+    path = path or LAST_GOOD_FILE
+    """Ponteiro da conta ativa — fonte de verdade compartilhada por CLI e MCP."""
+    try:
+        Path(path).write_text(username + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def resolve_active_account(accounts: list | None = None) -> dict | None:
+    """SIGMA_ACCOUNT (override por processo, não toca o ponteiro)
+    > ponteiro .sigma_last_good > primeira conta. None = modo legado."""
+    accounts = accounts if accounts is not None else load_accounts()
+    if not accounts:
+        return None
+    by_name = {a["username"]: a for a in accounts}
+    env_pick = os.environ.get("SIGMA_ACCOUNT")
+    if env_pick and env_pick in by_name:
+        return by_name[env_pick]
+    last_good = _read_last_good()
+    if last_good and last_good in by_name:
+        return by_name[last_good]
+    return accounts[0]
 
 
 def _restore_session(page, session: dict) -> None:
@@ -147,10 +224,85 @@ def _session_still_valid(page, captured: list, token: str = "") -> bool:
 
 
 @contextmanager
+def _ensure_multi(accounts: list, active: dict, proxy: str = None, guard=None):
+    """Multi-conta: tenta a sessão da ativa, depois das demais por prioridade
+    (failover barato — só troca de arquivo). Todas mortas → relogin com a
+    ATIVA apenas (sem cascata de relogin ~1min; senha morta se descobre uma
+    vez e o erro é claro). Failover só no boot: round-robin por chamada
+    churna cf_clearance e convida desafio do CF."""
+    order = [active] + [a for a in accounts if a["username"] != active["username"]]
+    # SIGMA_ACCOUNT é override por processo: não persiste no ponteiro global.
+    from_env = os.environ.get("SIGMA_ACCOUNT") == active["username"]
+    with BrowserEngine.get_page(proxy or default_proxy()) as page:
+        captured: list = []
+        _attach_api_monitor(page, captured)
+
+        for cand in order:
+            spath = session_path_for(cand["username"], accounts)
+            saved = load_session(spath)
+            if not saved:
+                continue
+            _restore_session(page, saved)
+            if _session_still_valid(page, captured, saved["token"]):
+                if not from_env:
+                    set_last_good(cand["username"])
+                blocked = guard(page) if guard else []
+                typer.secho(f"✔ Sessão reutilizada ({cand['username']}).", fg=typer.colors.GREEN, err=True)
+                yield SimpleNamespace(
+                    page=page, token=saved["token"], captured=captured,
+                    blocked=blocked, reused=True,
+                    account=cand["username"], session_path=spath,
+                )
+                return
+
+        spath = session_path_for(active["username"], accounts)
+        lock = Path(spath).with_suffix(".lock")
+        typer.secho(
+            f"⚠ Nenhuma sessão válida — logando com {active['username']}...",
+            fg=typer.colors.YELLOW, err=True,
+        )
+        # M3: serializa relogin entre processos (cron + MCP simultâneos).
+        with open(lock, "w") as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX)  # ponytail: bloqueante; ok p/ 2-3 processos
+            _login_flow(page, active["username"], active["password"], captured)
+            blocked = guard(page) if guard else []
+            token = page.evaluate("() => localStorage.getItem('token')")
+            save_session(
+                {
+                    "token": token,
+                    "cookies": page.context.cookies(),
+                    "local_storage": page.evaluate(
+                        "() => Object.fromEntries(Object.entries(localStorage))"
+                    ),
+                },
+                spath,
+                username=active["username"],
+            )
+        if not from_env:
+            set_last_good(active["username"])
+        typer.secho(
+            f"✔ Login completo ({active['username']}); sessão em {spath}.",
+            fg=typer.colors.GREEN, err=True,
+        )
+        yield SimpleNamespace(
+            page=page, token=token, captured=captured,
+            blocked=blocked, reused=False,
+            account=active["username"], session_path=spath,
+        )
+
+
+@contextmanager
 def ensure_logged_page(username: str = None, password: str = None, proxy: str = None,
                        guard=None, session_path: str = SESSION_FILE):
     """
     Como logged_page, mas reutiliza a sessão salva se ainda válida.
+
+    MULTI-CONTA: se sigma_accounts.json existir (ou env+arquivo combinados
+    tiverem ≥1 conta), a resolução é SIGMA_ACCOUNT > ponteiro
+    .sigma_last_good > primeira conta; tenta a sessão de cada conta (ativa
+    primeiro), reloga só na ativa se todas morarem e devolve
+    .account/.session_path no yield. O parâmetro session_path é IGNORADO
+    nesse modo (caminho vem de session_path_for).
 
     CR-03: single-launch — UM browser para toda a vida do contexto. Valida
     a sessão via fetch na própria página e, se morta, refaz o login NA
@@ -163,6 +315,13 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
     instalar guard antes abortaria POSTs do próprio SPA durante a validação
     e causaria falso negativo -> relogin desperdiçado.
     """
+    accounts = load_accounts()
+    if accounts:
+        active = resolve_active_account(accounts)
+        with _ensure_multi(accounts, active, proxy, guard) as s:
+            yield s
+        return
+
     username = username or os.environ.get("SIGMA_USERNAME")
     password = password or os.environ.get("SIGMA_PASSWORD")
 
@@ -215,6 +374,7 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
         yield SimpleNamespace(
             page=page, token=token, captured=captured,
             blocked=blocked, reused=reused,
+            account=None, session_path=session_path,
         )
 
 

@@ -18,10 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import typer  # noqa: E402
 
 from core.sigma.auth import (  # noqa: E402
-    SESSION_FILE,
     ensure_logged_page,
+    load_accounts,
     load_session,
+    resolve_active_account,
     save_session,
+    session_path_for,
 )
 from core.sigma.explore._guard import install_guard, report_blocked  # noqa: E402
 
@@ -31,7 +33,9 @@ OUT = Path(__file__).parent / "out"
 
 def main():
     OUT.mkdir(exist_ok=True)
-    had = load_session(SESSION_FILE) is not None
+    accounts = load_accounts()
+    active = resolve_active_account(accounts)
+    had = load_session(session_path_for(active["username"] if active else None, accounts)) is not None
     typer.echo(
         "Reutilizando sessão salva..." if had
         else "Sem sessão — logando (pode demorar ~1min)..."
@@ -55,17 +59,19 @@ def main():
                 ),
                 # M9: capturas de requests não são sessão — ficam só em out/.
             },
-            SESSION_FILE,
+            s.session_path,
+            username=s.account,
         )
         (OUT / "dashboard_gets.json").write_text(
             json.dumps(gets, indent=2, ensure_ascii=False), encoding="utf-8"
         )
+        spath = s.session_path
 
     typer.secho(f"\n✔ {len(gets)} GET(s) capturados no carregamento:", fg=typer.colors.GREEN)
     for g in gets:
         typer.echo(f"  {g['status']} {g['url'].replace('https://lideriptv.sigma.st', '')}")
     report_blocked(s.blocked)
-    typer.secho(f"✔ Sessão canônica em {SESSION_FILE}", fg=typer.colors.GREEN)
+    typer.secho(f"✔ Sessão canônica em {spath}", fg=typer.colors.GREEN)
 
 
 if __name__ == "__main__":
