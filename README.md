@@ -129,6 +129,31 @@ Fonte viva: `core/automations.py` (este espelho pode envelhecer; o comando
 `editar_cliente_sigma`, `excluir_cliente_sigma`, `resync_cliente_sigma`,
 `consultar_e_sincronizar_produto`.
 
+### MCP: variáveis de ambiente NÃO são herdadas
+
+Clientes MCP via stdio (Claude Desktop, OpenCode, etc.) **filtram o ambiente
+do processo pai** — `SIGMA_PROXY`, `SIGMA_USERNAME` e `SIGMA_PASSWORD` do seu
+shell não chegam no servidor. Passe o bloco `env` explícito na configuração,
+senão as tools devolvem "Sigma inacessível: sem credenciais":
+
+```json
+{
+  "automation-hub": {
+    "type": "local",
+    "command": "venv/bin/python",
+    "args": ["main.py", "mcp"],
+    "env": {
+      "SIGMA_PROXY": "socks5://100.x.y.z:1080",
+      "SIGMA_USERNAME": "...",
+      "SIGMA_PASSWORD": "..."
+    }
+  }
+}
+```
+
+Detalhe: com sessão válida em `sigma_session.json`, as tools funcionam sem
+credenciais (só o relogin precisa do par user/password).
+
 ## Conhecimento vivo (ordem de leitura para uma IA nova)
 
 1. `AGENTS.md` — hooks do grafo de conhecimento (graphify)
