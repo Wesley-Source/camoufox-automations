@@ -53,7 +53,7 @@ def main():
                 "local_storage": s.page.evaluate(
                     "() => Object.fromEntries(Object.entries(localStorage))"
                 ),
-                "dashboard_gets": gets,
+                # M9: capturas de requests não são sessão — ficam só em out/.
             },
             SESSION_FILE,
         )

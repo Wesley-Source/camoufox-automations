@@ -77,7 +77,7 @@ def register(app: typer.Typer):
             typer.secho(f"✖ Sigma inacessível: {e}", fg=typer.colors.RED)
             raise typer.Exit(1)
         expiry = me.get("membership_expiry_date")
-        typer.secho(f"✔ Usuário: {me.get('username')} | Painel expira: {expiry or 'ilimitado'}", fg=typer.colors.GREEN)
+        typer.secho(f"✔ Usuário: {me.get('username')} | Conta/membership expira: {expiry or 'ilimitado'}", fg=typer.colors.GREEN)
         for kind, n in entities_summary().items():
             typer.echo(f"  {kind:18s} {n}")
 

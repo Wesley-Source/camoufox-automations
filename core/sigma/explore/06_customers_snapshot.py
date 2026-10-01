@@ -27,6 +27,14 @@ from core.sigma.explore._guard import install_guard  # noqa: E402
 
 OUT = Path(__file__).parent / "out" / "snapshots"
 PAGE_DELAY = 0.4  # s entre páginas — gentle com o painel
+KEEP = 5  # M9: retenção — cada snapshot é uma cópia de PII; não acumular
+
+
+def prune(keep: int = KEEP):
+    snaps = sorted(OUT.glob("customers_*.json"))
+    for old in snaps[:-keep]:
+        old.unlink()
+        typer.secho(f"  (retido {keep}, removido {old.name})", fg=typer.colors.YELLOW)
 
 
 def fetch_all(client) -> dict:
@@ -102,6 +110,8 @@ def main(
         show_diff(diff(old, customers))
     elif not prev:
         typer.echo("(primeiro snapshot — baseline criado; rode de novo depois do CRUD p/ diff)")
+
+    prune()
 
 
 if __name__ == "__main__":

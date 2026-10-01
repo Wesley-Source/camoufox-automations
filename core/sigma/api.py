@@ -18,6 +18,7 @@ browser — validade é decisão do servidor (/api/auth/me).
 """
 from contextlib import contextmanager
 import json
+import threading
 import time
 from urllib.parse import quote
 
@@ -105,13 +106,28 @@ class _BrowserTransport:
 
     def _fetch(self, url, headers, method="GET", body=None, timeout=None):
         """fetch com timeout REAL — AbortSignal (CR-05: antes o timeout era
-        placebo, o fetch ficava pendurado pra sempre)."""
-        return self._page.evaluate(
-            self._FETCH_JS,
-            [url, headers, method,
-             json.dumps(body) if body is not None else None,
-             timeout if timeout is not None else 30_000],
-        )
+        placebo, o fetch ficava pendurado pra sempre) + watchdog M10: o
+        AbortSignal só cobre o fetch; uma main thread de SPA travada pendura
+        o evaluate em si. O vigia fecha a página, derrubando o evaluate."""
+        ms = timeout if timeout is not None else 30_000
+
+        def _kill():
+            try:
+                self._page.close()
+            except Exception:
+                pass
+
+        watchdog = threading.Timer(ms / 1000 + 5, _kill)
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            return self._page.evaluate(
+                self._FETCH_JS,
+                [url, headers, method,
+                 json.dumps(body) if body is not None else None, ms],
+            )
+        finally:
+            watchdog.cancel()
 
     def get(self, url, params=None, headers=None, timeout=None):
         if params:

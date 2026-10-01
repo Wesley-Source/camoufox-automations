@@ -55,7 +55,7 @@ def _status_sigma() -> str:
     return json.dumps(
         {
             "usuario": me.get("username"),
-            "painel_expira_em": me.get("membership_expiry_date") or "ilimitado",
+            "conta_expira_em": me.get("membership_expiry_date") or "ilimitado",
             "banco_local": entities_summary(),
         },
         ensure_ascii=False,
