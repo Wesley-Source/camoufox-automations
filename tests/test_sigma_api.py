@@ -206,8 +206,12 @@ def test_renovacao_dupla_nao_acumula_dia_fantasma():
 def test_expiry_date_e_due_date_nao_sofrem_ajuste():
     assert customer_new_expiry({"expiry_date": "2026-11-03"}, 1) == "2026-11-04"
     assert customer_new_expiry({"due_date": "2026-11-03"}, 2) == "2026-11-05"
-    assert customer_new_expiry({"expiry_date": "2026-11-03",
-                                "expires_at": "2026-11-04T02:59:59Z"}, 1) == "2026-11-04"
+
+
+def test_precedencia_canonica_expires_at_primeiro():  # A4
+    # datas divergentes: o canônico expires_at vence a expiry_date velha
+    row = {"expiry_date": "2026-01-01", "expires_at": "2026-12-04T02:59:59.000000Z"}
+    assert customer_new_expiry(row, add_days=0) == "2026-12-03"
 
 
 def test_id_vai_urlencoded_na_url(client):  # CR-13: path injection
@@ -228,3 +232,13 @@ def test_doh_pin_expira(monkeypatch):  # CR-21
     c._doh_ip = "1.2.3.4"
     c._doh_ts = sigma_api.time.monotonic() - sigma_api._DOH_TTL - 1
     assert sigma_api.time.monotonic() - c._doh_ts >= sigma_api._DOH_TTL
+
+
+def test_mcp_login_sigma_mascara_token(monkeypatch):  # B2
+    import interfaces.mcp.sigma as m
+    monkeypatch.setenv("SIGMA_USERNAME", "u")
+    monkeypatch.setenv("SIGMA_PASSWORD", "p")
+    monkeypatch.setattr(m, "login", lambda u, p: {"token": "6925|ABCDEFGHJKLMNOPQRS1234"})
+    out = m._login_sigma()
+    assert "6925|ABCDEFGHJKL" in out          # prefixo de 16 chars visível
+    assert "PQRS1234" not in out             # cauda fora do transcript

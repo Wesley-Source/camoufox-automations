@@ -1,10 +1,9 @@
-import json
 import os
 import secrets
 
 import typer
 
-from core.sigma.auth import SESSION_FILE, allow_destructive, login
+from core.sigma.auth import SESSION_FILE, allow_destructive, login, save_session
 from core.sigma.api import (
     customer_new_expiry,
     find_customer,
@@ -38,8 +37,8 @@ def register(app: typer.Typer):
             fg=typer.colors.GREEN,
         )  # CR-14: token completo não vai pro stdout/histórico
         if save:
-            with open(SESSION_FILE, "w") as f:
-                json.dump(sess, f, indent=2)
+            # B1: mesma via do CR-12 (0600 + troca atômica) — open() cru gravava 0644
+            save_session(sess, SESSION_FILE)
             typer.secho(f"✔ Sessão completa salva em {SESSION_FILE}", fg=typer.colors.GREEN)
 
     @app.command("sigma-sync")

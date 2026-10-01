@@ -26,7 +26,7 @@ def _login_sigma() -> str:
         sess = login(username, password)
     except Exception as e:
         return f"Login Sigma falhou: {e}"
-    return f"Token Sigma: {sess['token']}"
+    return f"Token Sigma: {sess['token'][:16]}… (B2: completo não vai pro transcript)"
 
 
 def _sincronizar_sigma(o_que: str, paginas: int, per_page: int) -> str:
