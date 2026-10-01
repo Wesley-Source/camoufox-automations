@@ -401,7 +401,7 @@ def set_expiry_on_payload(row: dict, payload: dict, ymd: str):
 
 
 @contextmanager
-def open_client(session_path: str = SESSION_FILE, proxy: str = None):
+def open_client(session_path: str = SESSION_FILE, proxy: str = None, guard=None):
     """
     Cliente com transporte do browser (o único que o Cloudflare aceita).
 
@@ -415,6 +415,14 @@ def open_client(session_path: str = SESSION_FILE, proxy: str = None):
     cf_clearance é IP-bound — mantenha o caminho estável depois do primeiro login.
     """
     with ensure_logged_page(session_path=session_path,
-                            proxy=proxy or default_proxy()) as s:
+                            proxy=proxy or default_proxy(), guard=guard) as s:
         transport = _BrowserTransport(s.page, extra_headers=_AXIOS_HEADERS)
         yield SigmaApiClient(token=s.token, session_path=session_path, transport=transport)
+
+
+def project_response(res) -> dict:
+    """M2: projeção segura de resposta de mutação — o row completo pode
+    conter password do cliente; só os campos inofensivos saem."""
+    if isinstance(res, dict):
+        return {k: res[k] for k in ("id", "deleted_at", "status") if k in res}
+    return {"raw": str(res)[:200]}

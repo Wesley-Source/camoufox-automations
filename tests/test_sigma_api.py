@@ -242,3 +242,12 @@ def test_mcp_login_sigma_mascara_token(monkeypatch):  # B2
     out = m._login_sigma()
     assert "6925|ABCDEFGHJKL" in out          # prefixo de 16 chars visível
     assert "PQRS1234" not in out             # cauda fora do transcript
+
+
+def test_project_response_nao_vaza_row():  # M2
+    from core.sigma.api import project_response
+    row = {"id": "X1", "deleted_at": "2026-10-01", "status": "ok", "password": "sec"}
+    out = project_response(row)
+    assert out == {"id": "X1", "deleted_at": "2026-10-01", "status": "ok"}
+    assert "password" not in out
+    assert project_response("<html>cf</html>") == {"raw": "<html>cf</html>"}

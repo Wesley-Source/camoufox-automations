@@ -8,6 +8,7 @@ from core.sigma.api import (
     customer_new_expiry,
     find_customer,
     open_client,
+    project_response,
     set_expiry_on_payload,
 )
 from core.sigma.auth import allow_destructive, login
@@ -61,7 +62,8 @@ def _status_sigma() -> str:
     )
 
 
-def _criar_cliente_sigma(username, package_id, server_id, connections, password, name, email) -> str:
+def _criar_cliente_sigma(username, package_id, server_id, connections, password,
+                         name, email, mostrar_senha=False) -> str:
     pwd = password or secrets.token_urlsafe(12)
     payload = {
         "username": username, "password": pwd, "password_confirmation": pwd,
@@ -74,7 +76,9 @@ def _criar_cliente_sigma(username, package_id, server_id, connections, password,
     except Exception as e:
         return f"Create falhou: {e}"
     cid = (res.get("data") or {}).get("id") if isinstance(res, dict) else None
-    return json.dumps({"criado": username, "id": cid or "?", "senha": pwd}, ensure_ascii=False)
+    # M1: senha mascarada por padrão — igual ao CLI (--show-password)
+    senha = pwd if mostrar_senha else pwd[:3] + "… (pedir mostrar_senha=True)"
+    return json.dumps({"criado": username, "id": cid or "?", "senha": senha}, ensure_ascii=False)
 
 
 def _editar_cliente_sigma(customer_id, note, add_days, set_expiry) -> str:
@@ -111,7 +115,7 @@ def _excluir_cliente_sigma(customer_id, confirmar) -> str:
             res = client.delete_customer(customer_id)
     except Exception as e:
         return f"Delete falhou: {e}"
-    return json.dumps({"id": customer_id, "resposta": res}, ensure_ascii=False)
+    return json.dumps({"id": customer_id, "resposta": project_response(res)}, ensure_ascii=False)
 
 
 def _resync_cliente_sigma(customer_id) -> str:
@@ -120,7 +124,7 @@ def _resync_cliente_sigma(customer_id) -> str:
             res = client.resync_customer(customer_id)
     except Exception as e:
         return f"Resync falhou: {e}"
-    return json.dumps({"id": customer_id, "resposta": res}, ensure_ascii=False)
+    return json.dumps({"id": customer_id, "resposta": project_response(res)}, ensure_ascii=False)
 
 
 def register(mcp):
@@ -160,16 +164,18 @@ def register(mcp):
         password: str = None,
         name: str = None,
         email: str = None,
+        mostrar_senha: bool = False,
     ) -> str:
         """
         Cria um cliente no painel Sigma. package_id e server_id são IDs string
         do painel (ex.: rdqLkQjWAE) e devem formar par coerente (o pacote
-        pertence ao servidor). Senha gerada se não informada; name/email
-        padrão derivados do username.
+        pertence ao servidor). Senha gerada se não informada e mascarada no
+        resultado — passe mostrar_senha=True para vê-la em claro (M1).
+        name/email padrão derivados do username.
         """
         return await anyio.to_thread.run_sync(
             _criar_cliente_sigma, username, package_id, server_id,
-            connections, password, name, email,
+            connections, password, name, email, mostrar_senha,
         )
 
     @mcp.tool()

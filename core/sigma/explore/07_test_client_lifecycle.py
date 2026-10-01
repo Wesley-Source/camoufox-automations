@@ -217,11 +217,18 @@ def main():
                          errors=body.get("errors"), body=str(body)[:200])
                 if st in (200, 201):
                     status = st
-                    # ID vem da lista (resposta do create tem shape instável)
-                    created = find_test_customer(client, username)
-                    if not created:
-                        raise typer.Exit("✖ Create 200 mas cliente não aparece na lista.")
-                    state["test_id"] = str(created["id"])
+                    # M5: seta test_id do CORPO da resposta ANTES de qualquer
+                    # chamada que pode falhar (find pagina tudo) — se cair no
+                    # finally com test_id None, o zz_test fica órfão no painel.
+                    direct = (body.get("data") or {}).get("id") if isinstance(body, dict) else None
+                    if direct:
+                        state["test_id"] = str(direct)
+                    else:
+                        # fallback: resposta sem shape estável — procura na lista
+                        created = find_test_customer(client, username)
+                        if not created:
+                            raise typer.Exit("✖ Create 200 mas cliente não aparece na lista.")
+                        state["test_id"] = str(created["id"])
                     typer.secho(f"  ✔ criado id={state['test_id']}", fg=typer.colors.GREEN)
                     break
                 errors = body.get("errors")
@@ -295,7 +302,9 @@ def main():
         tid = state.get("test_id")
         if tid:
             try:
-                with open_client() as c2:
+                # A3: cleanup emergencial com allowlist do próprio make_guard
+                handler2, _ = make_guard(state)
+                with open_client(guard=handler2) as c2:
                     st, _ = raw(c2._session._page, "DELETE",
                                 f"/customers/{tid}", token=c2.token)
                 typer.secho(f"⚠ Cleanup emergencial: {tid} excluído (status {st}).",

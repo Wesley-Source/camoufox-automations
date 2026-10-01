@@ -9,6 +9,7 @@ Fluxo de auth descoberto via recon do bundle JS (assets/ApiService-*.js):
 O login é feito via navegador (Camoufox) para passar no Cloudflare e capturar
 o cf_clearance; ao final devolvemos token + cookies + log de requests /api/*.
 """
+import fcntl
 import json
 import os
 import time
@@ -40,8 +41,9 @@ def _attach_api_monitor(page, captured: list):
             except Exception:
                 pass
             post = resp.request.post_data
-            if "/api/auth/login" in resp.url:
-                post = "[REDACTED]"  # CR-15: credenciais não vão pro log
+            # A2: qualquer corpo com senha não vai pro log (login, create, etc.)
+            if post and "password" in post.lower():
+                post = "[REDACTED]"
             captured.append({
                 "method": resp.request.method,
                 "url": resp.url,
@@ -90,11 +92,13 @@ def load_session(path: str = SESSION_FILE) -> dict | None:
 
 def save_session(sess: dict, path: str = SESSION_FILE) -> None:
     """CR-12: 0600 + troca atômica — token+cookies nunca ficam legíveis para
-    grupo/outros nem pela metade escritos."""
+    grupo/outros nem pela metade escritos. M3: tmp por-pid (duas corridas
+    não se truncam) e arquivo nasce 0600 (sem janela write→chmod)."""
     p = Path(path)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps(sess, indent=2, ensure_ascii=False), encoding="utf-8")
-    os.chmod(tmp, 0o600)
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(sess, f, indent=2, ensure_ascii=False)
     os.replace(tmp, p)
 
 
@@ -136,8 +140,10 @@ def _session_still_valid(page, captured: list, token: str = "") -> bool:
             token or "",
         )
         return status == 200
-    except Exception:
-        return False
+    except Exception as exc:
+        # M7: erro de rede/transporte ≠ sessão morta. Propagar — relogar por
+        # falha transitória desperdiça ~4min e mata uma sessão que estava boa.
+        raise RuntimeError(f"Validação de sessão falhou (rede/proxy?): {exc}") from exc
 
 
 @contextmanager
@@ -186,19 +192,24 @@ def ensure_logged_page(username: str = None, password: str = None, proxy: str = 
                     "Sem sessão válida e sem credenciais. Defina SIGMA_USERNAME/SIGMA_PASSWORD "
                     "ou rode: venv/bin/python main.py sigma-login --save"
                 )
-            _login_flow(page, username, password, captured)
-            blocked = guard(page) if guard else []
-            token = page.evaluate("() => localStorage.getItem('token')")
-            save_session(
-                {
-                    "token": token,
-                    "cookies": page.context.cookies(),
-                    "local_storage": page.evaluate(
-                        "() => Object.fromEntries(Object.entries(localStorage))"
-                    ),
-                },
-                session_path,
-            )
+            # M3: serializa relogin entre processos (cron + MCP simultâneos
+            # não abrem dois browsers/logins na mesma conta).
+            lock = Path(session_path).with_suffix(".lock")
+            with open(lock, "w") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)  # ponytail: bloqueante; ok p/ 2-3 processos
+                _login_flow(page, username, password, captured)
+                blocked = guard(page) if guard else []
+                token = page.evaluate("() => localStorage.getItem('token')")
+                save_session(
+                    {
+                        "token": token,
+                        "cookies": page.context.cookies(),
+                        "local_storage": page.evaluate(
+                            "() => Object.fromEntries(Object.entries(localStorage))"
+                        ),
+                    },
+                    session_path,
+                )
             typer.secho(f"✔ Login completo; sessão atualizada em {session_path}.", fg=typer.colors.GREEN)
 
         yield SimpleNamespace(

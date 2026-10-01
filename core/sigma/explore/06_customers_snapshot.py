@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import typer  # noqa: E402
 
 from core.sigma.api import open_client  # noqa: E402
+from core.sigma.explore._guard import install_guard  # noqa: E402
 
 OUT = Path(__file__).parent / "out" / "snapshots"
 PAGE_DELAY = 0.4  # s entre páginas — gentle com o painel
@@ -80,7 +81,7 @@ def main(
     target = OUT / f"customers_{stamp}.json"
 
     typer.echo("Baixando TODOS os clientes do painel (só GET, sem tocar no banco)...")
-    with open_client() as client:
+    with open_client(guard=install_guard) as client:
         customers = fetch_all(client)
 
     payload = {

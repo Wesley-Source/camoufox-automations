@@ -8,6 +8,7 @@ from core.sigma.api import (
     customer_new_expiry,
     find_customer,
     open_client,
+    project_response,
     set_expiry_on_payload,
 )
 from core.sigma.scraper import (
@@ -166,7 +167,8 @@ def register(app: typer.Typer):
         except Exception as e:
             typer.secho(f"✖ Delete falhou: {e}", fg=typer.colors.RED)
             raise typer.Exit(1)
-        typer.secho(f"✔ Cliente {customer_id} removido (soft). Resposta: {res}", fg=typer.colors.GREEN)
+        typer.secho(f"✔ Cliente {customer_id} removido (soft). Resposta: {project_response(res)}",
+                    fg=typer.colors.GREEN)
 
     @app.command("sigma-customer-resync")
     def cli_sigma_customer_resync(customer_id: str = typer.Argument(..., help="ID do cliente.")):
