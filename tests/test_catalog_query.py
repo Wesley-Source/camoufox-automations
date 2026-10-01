@@ -19,6 +19,20 @@ class FakeCatalogClient:
                 {"name": "sem_id"}]  # M4: pula row sem id
 
 
+class FakeLaravelCatalogClient:
+    """Formato REAL do painel: envelope Laravel {"data": [...]}.
+
+    Achado ao vivo na VPS — iterar o envelope como lista percorre as chaves
+    do dict e explode com "'str' object has no attribute 'get'".
+    """
+
+    def servers(self):
+        return {"data": [{"id": "srvX", "name": "LIDER ALPHA"}]}
+
+    def packages(self):
+        return {"data": [{"id": "pkgX", "name": "Pack X", "server_id": "srvX"}]}
+
+
 class FakeSearchClient:
     def __init__(self):
         self.pages = {
@@ -51,6 +65,15 @@ def test_sync_servers_packages_grava_catalogo():
     assert database.count_entities("package") == 2
     pkg = [p for p in list_entities("package") if p["id"] == "pkg1"][0]
     assert pkg["server_id"] == "srv1"  # o par que valida o create
+
+
+def test_sync_servers_packages_aceita_envelope_laravel():
+    """O painel real embrulha o catálogo em {"data": [...]} (achado na VPS)."""
+    res = sync_servers_packages(FakeLaravelCatalogClient())
+    assert res["servers"] == 1 and res["packages"] == 1
+    assert res["synced"] == 2
+    assert database.count_entities("server") == 1
+    assert database.count_entities("package") == 1
 
 
 def test_search_entities_escapa_like():

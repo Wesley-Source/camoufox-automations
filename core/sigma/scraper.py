@@ -90,6 +90,12 @@ def sync_servers_packages(client: SigmaApiClient) -> dict:
     save_raw(f"{SIGMA_API}/servers", servers)
     packages = client.packages()
     save_raw(f"{SIGMA_API}/packages/list", packages)
+    # O painel real devolve envelope Laravel {"data": [...]} (achado na VPS);
+    # aceita lista crua também.
+    if isinstance(servers, dict):
+        servers = servers.get("data", [])
+    if isinstance(packages, dict):
+        packages = packages.get("data", [])
     synced = save_entities("server", [(s["id"], s) for s in servers if s.get("id")])
     synced += save_entities("package", [(p["id"], p) for p in packages if p.get("id")])
     return {"what": "servers_packages", "synced": synced,
