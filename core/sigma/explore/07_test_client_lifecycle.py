@@ -78,7 +78,8 @@ def make_guard(state: dict):
                 route.abort("blocked-lifecycle-guard")
         except Exception:
             try:
-                route.continue_()
+                # CR-09: fail-CLOSED — erro no guardião nunca libera a mutação.
+                route.abort("blocked-guard-error")
             except Exception:
                 pass
 
@@ -157,136 +158,152 @@ def main():
     state: dict = {"test_id": None}
 
     typer.echo("Abrindo painel + guardião de URL...")
-    with open_client() as client:
-        page = client._session._page
-        handler, blocked = make_guard(state)
-        page.route("**/*", handler)
+    try:
+        with open_client() as client:
+            page = client._session._page
+            handler, blocked = make_guard(state)
+            page.route("**/*", handler)
 
-        # 0) snapshot ANTES (mesmo formato do 06, sem abrir outro browser)
-        typer.echo("[0/6] Snapshot antes...")
-        before = full_list(client)
+            # 0) snapshot ANTES (mesmo formato do 06, sem abrir outro browser)
+            typer.echo("[0/6] Snapshot antes...")
+            before = full_list(client)
 
-        # 0.5) auto-limpeza: leftovers de execuções interrompidas
-        leftovers = list_test_customers(client)
-        for lr in leftovers:
-            lid = str(lr["id"])
-            typer.secho(f"  ⚠ leftover {lr.get('username')} (id={lid}) — excluindo...", fg=typer.colors.YELLOW)
-            state["test_id"] = lid  # libera o DELETE no guardião
-            st, _ = raw(page, "DELETE", f"/customers/{lid}", token=client.token)
-            log_step(log, "leftover_cleaned", id=lid, status=st)
-        state["test_id"] = None
+            # 0.5) auto-limpeza: leftovers de execuções interrompidas
+            leftovers = list_test_customers(client)
+            for lr in leftovers:
+                lid = str(lr["id"])
+                typer.secho(f"  ⚠ leftover {lr.get('username')} (id={lid}) — excluindo...", fg=typer.colors.YELLOW)
+                state["test_id"] = lid  # libera o DELETE no guardião
+                st, _ = raw(page, "DELETE", f"/customers/{lid}", token=client.token)
+                log_step(log, "leftover_cleaned", id=lid, status=st)
+            state["test_id"] = None
 
-        # 1) descoberta passiva: servers/packages pra montar o payload
-        typer.echo("[1/6] Descobrindo servers/packages (só GET)...")
-        server_id = package_id = None
-        try:
-            st, body = raw(page, "GET", "/servers", token=client.token)
-            body = as_dict(body)
-            servers = body.get("data", body.get("servers", []))
-            st2, body2 = raw(page, "GET", "/packages/list", token=client.token)
-            body2 = as_dict(body2)
-            packages = body2.get("data", body2.get("packages", []))
-            log_step(log, "discover", servers_status=st, n_servers=len(servers),
-                     packages_status=st2, n_packages=len(packages))
-            # Par coerente: pacote que pertence a um servidor existente
-            by_server = {}
-            for p in packages:
-                by_server.setdefault(str(p.get("server_id", "")), []).append(p)
-            for s in servers:
-                sid = str(s.get("id"))
-                if by_server.get(sid):
-                    server_id, package_id = sid, str(by_server[sid][0]["id"])
+            # 1) descoberta passiva: servers/packages pra montar o payload
+            typer.echo("[1/6] Descobrindo servers/packages (só GET)...")
+            server_id = package_id = None
+            try:
+                st, body = raw(page, "GET", "/servers", token=client.token)
+                body = as_dict(body)
+                servers = body.get("data", body.get("servers", []))
+                st2, body2 = raw(page, "GET", "/packages/list", token=client.token)
+                body2 = as_dict(body2)
+                packages = body2.get("data", body2.get("packages", []))
+                log_step(log, "discover", servers_status=st, n_servers=len(servers),
+                         packages_status=st2, n_packages=len(packages))
+                # Par coerente: pacote que pertence a um servidor existente
+                by_server = {}
+                for p in packages:
+                    by_server.setdefault(str(p.get("server_id", "")), []).append(p)
+                for s in servers:
+                    sid = str(s.get("id"))
+                    if by_server.get(sid):
+                        server_id, package_id = sid, str(by_server[sid][0]["id"])
+                        break
+                if package_id is None and packages:  # fallback: 1º pacote e o server dele
+                    package_id = str(packages[0].get("id"))
+                    server_id = str(packages[0].get("server_id")) or server_id
+            except Exception as e:
+                log_step(log, "discover", error=str(e).splitlines()[0][:80])
+            typer.echo(f"  → server_id={server_id} package_id={package_id}")
+
+            # 2) CREATE iterativo — 422 nos ensina o schema
+            typer.echo(f"[2/6] Criando {username} (iterativo por validação)...")
+            payload = {"username": username}
+            status = None
+            for attempt in range(1, MAX_CREATE_ATTEMPTS + 1):
+                st, body = raw(page, "POST", "/customers", payload, token=client.token)
+                body = as_dict(body)
+                log_step(log, "create_attempt", n=attempt, status=st,
+                         errors=body.get("errors"), body=str(body)[:200])
+                if st in (200, 201):
+                    status = st
+                    # ID vem da lista (resposta do create tem shape instável)
+                    created = find_test_customer(client, username)
+                    if not created:
+                        raise typer.Exit("✖ Create 200 mas cliente não aparece na lista.")
+                    state["test_id"] = str(created["id"])
+                    typer.secho(f"  ✔ criado id={state['test_id']}", fg=typer.colors.GREEN)
                     break
-            if package_id is None and packages:  # fallback: 1º pacote e o server dele
-                package_id = str(packages[0].get("id"))
-                server_id = str(packages[0].get("server_id")) or server_id
-        except Exception as e:
-            log_step(log, "discover", error=str(e).splitlines()[0][:80])
-        typer.echo(f"  → server_id={server_id} package_id={package_id}")
+                errors = body.get("errors")
+                typer.echo(f"  {st} → {json.dumps(errors, ensure_ascii=False)[:200]}")
+                payload = fill_missing(payload, errors, username, server_id, package_id)
+            if state["test_id"] is None:
+                raise typer.Exit(f"✖ Create não concluído (último status={status}). Log em out/.")
+            test_id = state["test_id"]
+            last_payload = dict(payload)
 
-        # 2) CREATE iterativo — 422 nos ensina o schema
-        typer.echo(f"[2/6] Criando {username} (iterativo por validação)...")
-        payload = {"username": username}
-        status = None
-        for attempt in range(1, MAX_CREATE_ATTEMPTS + 1):
-            st, body = raw(page, "POST", "/customers", payload, token=client.token)
-            body = as_dict(body)
-            log_step(log, "create_attempt", n=attempt, status=st,
-                     errors=body.get("errors"), body=str(body)[:200])
-            if st in (200, 201):
-                status = st
-                # ID vem da lista (resposta do create tem shape instável)
-                created = find_test_customer(client, username)
-                if not created:
-                    raise typer.Exit("✖ Create 200 mas cliente não aparece na lista.")
-                state["test_id"] = str(created["id"])
-                typer.secho(f"  ✔ criado id={state['test_id']}", fg=typer.colors.GREEN)
-                break
-            errors = body.get("errors")
-            typer.echo(f"  {st} → {json.dumps(errors, ensure_ascii=False)[:200]}")
-            payload = fill_missing(payload, errors, username, server_id, package_id)
-        if state["test_id"] is None:
-            raise typer.Exit(f"✖ Create não concluído (último status={status}). Log em out/.")
-        test_id = state["test_id"]
-        last_payload = dict(payload)
+            # 3) VERIFY: aparece na lista pelo username?
+            typer.echo("[3/6] Verificando na lista...")
+            row = find_test_customer(client, username)
+            log_step(log, "verify_created", found=bool(row), id=row.get("id") if row else None)
+            if not row or str(row.get("id")) != test_id:
+                raise typer.Exit(f"✖ Cliente criado não encontrado na lista (id esperado {test_id}).")
 
-        # 3) VERIFY: aparece na lista pelo username?
-        typer.echo("[3/6] Verificando na lista...")
-        row = find_test_customer(client, username)
-        log_step(log, "verify_created", found=bool(row), id=row.get("id") if row else None)
-        if not row or str(row.get("id")) != test_id:
-            raise typer.Exit(f"✖ Cliente criado não encontrado na lista (id esperado {test_id}).")
+            # 4) EDIT/RENEW: estende due_date em +1 mês e muda a note
+            typer.echo("[4/6] Editando (renova due_date + note)...")
+            edit = dict(last_payload)
+            base = row.get("expiry_date") or row.get("due_date")
+            try:
+                new_due = (datetime.fromisoformat(str(base).replace("Z", "+00:00")) + timedelta(days=30)).date().isoformat()
+            except ValueError:
+                new_due = (datetime.now() + timedelta(days=30)).date().isoformat()
+            edit.update({"note": f"editado pelo explorer {stamp}", "expiry_date": new_due, "due_date": new_due})
+            st, body = raw(page, "PUT", f"/customers/{test_id}", edit, token=client.token)
+            log_step(log, "edit", status=st, errors=body.get("errors") if isinstance(body, dict) else None)
+            row2 = find_test_customer(client, username)
+            applied = bool(row2) and (row2.get("note") == edit["note"])
+            log_step(log, "verify_edit", status=st, note_applied=applied)
 
-        # 4) EDIT/RENEW: estende due_date em +1 mês e muda a note
-        typer.echo("[4/6] Editando (renova due_date + note)...")
-        edit = dict(last_payload)
-        base = row.get("expiry_date") or row.get("due_date")
-        try:
-            new_due = (datetime.fromisoformat(str(base).replace("Z", "+00:00")) + timedelta(days=30)).date().isoformat()
-        except ValueError:
-            new_due = (datetime.now() + timedelta(days=30)).date().isoformat()
-        edit.update({"note": f"editado pelo explorer {stamp}", "expiry_date": new_due, "due_date": new_due})
-        st, body = raw(page, "PUT", f"/customers/{test_id}", edit, token=client.token)
-        log_step(log, "edit", status=st, errors=body.get("errors") if isinstance(body, dict) else None)
-        row2 = find_test_customer(client, username)
-        applied = bool(row2) and (row2.get("note") == edit["note"])
-        log_step(log, "verify_edit", status=st, note_applied=applied)
+            # 5) RESYNC (empurra pro servidor de stream — só o teste)
+            typer.echo("[5/6] Resync do teste...")
+            st, body = raw(page, "POST", f"/customers/{test_id}/resync", {}, token=client.token)
+            log_step(log, "resync", status=st)
 
-        # 5) RESYNC (empurra pro servidor de stream — só o teste)
-        typer.echo("[5/6] Resync do teste...")
-        st, body = raw(page, "POST", f"/customers/{test_id}/resync", {}, token=client.token)
-        log_step(log, "resync", status=st)
+            # 6) DELETE + verificação de ausência
+            typer.echo("[6/6] Excluindo o teste...")
+            st, body = raw(page, "DELETE", f"/customers/{test_id}", token=client.token)
+            log_step(log, "delete", status=st, body=str(body)[:120])
+            gone = find_test_customer(client, username) is None
+            log_step(log, "verify_deleted", gone=gone)
+            state["test_id"] = None  # deletado OK — cleanup emergencial vira no-op
 
-        # 6) DELETE + verificação de ausência
-        typer.echo("[6/6] Excluindo o teste...")
-        st, body = raw(page, "DELETE", f"/customers/{test_id}", token=client.token)
-        log_step(log, "delete", status=st, body=str(body)[:120])
-        gone = find_test_customer(client, username) is None
-        log_step(log, "verify_deleted", gone=gone)
+            # Snapshot DEPOIS + diff — o veredito
+            typer.echo("Snapshot depois + diff...")
+            after = full_list(client)
+            d = snap.diff(before, after)
 
-        # Snapshot DEPOIS + diff — o veredito
-        typer.echo("Snapshot depois + diff...")
-        after = full_list(client)
-        d = snap.diff(before, after)
+            (OUT / "lifecycle_log.json").write_text(
+                json.dumps({"log": log, "diff": d, "blocked": blocked},
+                           indent=2, ensure_ascii=False, default=str),
+                encoding="utf-8",
+            )
+            snap.show_diff(d)
 
-        (OUT / "lifecycle_log.json").write_text(
-            json.dumps({"log": log, "diff": d, "blocked": blocked},
-                       indent=2, ensure_ascii=False, default=str),
-            encoding="utf-8",
-        )
-        snap.show_diff(d)
+            clean = (
+                set(d["added"]) <= {test_id}
+                and set(d["removed"]) == set()
+                and set(d["changed"]) == set()
+            )
+            if not gone or not clean:
+                typer.secho("✖ DIVERGÊNCIA: diff mostra mudanças fora do ciclo teste!", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            typer.secho("✔ Ciclo completo: criou, editou, resincronizou e excluiu — zero impacto real.", fg=typer.colors.GREEN)
+            if blocked:
+                typer.secho(f"⚠ Guardião bloqueou {len(blocked)} request(s): {blocked[:5]}", fg=typer.colors.YELLOW)
+    finally:
+        # CR-29: crash no meio do ciclo não pode deixar zz_test_* no painel.
+        tid = state.get("test_id")
+        if tid:
+            try:
+                with open_client() as c2:
+                    st, _ = raw(c2._session._page, "DELETE",
+                                f"/customers/{tid}", token=c2.token)
+                typer.secho(f"⚠ Cleanup emergencial: {tid} excluído (status {st}).",
+                            fg=typer.colors.YELLOW)
+            except Exception as e:
+                typer.secho(f"✖ Cleanup emergencial FALHOU p/ {tid}: {e} — "
+                            "remova o cliente teste manualmente.", fg=typer.colors.RED)
 
-        clean = (
-            set(d["added"]) <= {test_id}
-            and set(d["removed"]) == set()
-            and set(d["changed"]) == set()
-        )
-        if not gone or not clean:
-            typer.secho("✖ DIVERGÊNCIA: diff mostra mudanças fora do ciclo teste!", fg=typer.colors.RED)
-            raise typer.Exit(1)
-        typer.secho("✔ Ciclo completo: criou, editou, resincronizou e excluiu — zero impacto real.", fg=typer.colors.GREEN)
-        if blocked:
-            typer.secho(f"⚠ Guardião bloqueou {len(blocked)} request(s): {blocked[:5]}", fg=typer.colors.YELLOW)
 
 
 def fill_missing(payload: dict, errors, username: str, server_id, package_id) -> dict:
