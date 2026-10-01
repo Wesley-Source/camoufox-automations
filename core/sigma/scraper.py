@@ -20,10 +20,14 @@ def sync_customers(client: SigmaApiClient, pages: int = 1, per_page: int = 100) 
     for page in range(1, pages + 1):
         data = client.customers(page, per_page)
         save_raw(f"{SIGMA_API}/customers?page={page}", data)
-        for row in data["data"]:
+        rows = data["data"]
+        for row in rows:
             save_entity("customer", row["id"], row)
             synced += 1
-        if page >= data.get("meta", {}).get("last_page", page):
+        # CR-23: sem meta.last_page (shape inesperado), só paramos com a
+        # página vazia — nunca presumimos que a p1 é a última.
+        last_page = data.get("meta", {}).get("last_page")
+        if not rows or (last_page is not None and page >= last_page):
             break
     return {"what": "customers", "synced": synced, "pages": page, "status": "synced"}
 

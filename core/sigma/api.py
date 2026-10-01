@@ -344,7 +344,7 @@ def find_customer(client, customer_id: str) -> dict | None:
     while True:
         resp = client.customers(page=page)
         for row in resp.get("data", []):
-            if row.get("id") == customer_id:
+            if str(row.get("id")) == str(customer_id):  # CR-20: IDs são strings
                 return row
         if page >= resp.get("meta", {}).get("last_page", 1):
             return None
