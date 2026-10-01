@@ -2,7 +2,13 @@
 import pytest
 
 from core.sigma import api as sigma_api
-from core.sigma.api import SigmaApiClient, SigmaApiError, doh_resolve, _is_dns_failure
+from core.sigma.api import (
+    SigmaApiClient,
+    SigmaApiError,
+    customer_new_expiry,
+    doh_resolve,
+    _is_dns_failure,
+)
 
 
 class FakeResponse:
@@ -177,3 +183,28 @@ def test_mutacao_corpo_nao_json_levanta_erro(client):
     client._session.responses = [FakeResponse(200, text="<html>spa</html>")]
     with pytest.raises(SigmaApiError, match="não-JSON"):
         client.delete_customer("ABC123xYz")
+
+
+# ---- CR-04: roundtrip de expiração sem dia fantasma cumulativo -------------
+
+def test_renovacao_expires_at_avanca_exatos_30_dias():
+    # 04/11 02:59:59Z = 03/11 23:59:59 local (UTC-3) -> +30 = 03/12 local
+    row = {"expires_at": "2026-11-04T02:59:59.000000Z"}
+    assert customer_new_expiry(row, add_days=30) == "2026-12-03"
+
+
+def test_renovacao_dupla_nao_acumula_dia_fantasma():
+    # set_expiry_on_payload grava (ymd+1)T02:59:59Z; reler e renovar de novo
+    # deve avançar exatamente +30 outra vez, não +31.
+    row = {"expires_at": "2026-11-04T02:59:59.000000Z"}
+    ymd1 = customer_new_expiry(row, add_days=30)            # 2026-12-03
+    row2 = {"expires_at": "2026-12-04T02:59:59.000000Z"}    # o que seria gravado
+    assert ymd1 == "2026-12-03"
+    assert customer_new_expiry(row2, add_days=30) == "2027-01-02"
+
+
+def test_expiry_date_e_due_date_nao_sofrem_ajuste():
+    assert customer_new_expiry({"expiry_date": "2026-11-03"}, 1) == "2026-11-04"
+    assert customer_new_expiry({"due_date": "2026-11-03"}, 2) == "2026-11-05"
+    assert customer_new_expiry({"expiry_date": "2026-11-03",
+                                "expires_at": "2026-11-04T02:59:59Z"}, 1) == "2026-11-04"

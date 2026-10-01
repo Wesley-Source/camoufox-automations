@@ -325,16 +325,24 @@ def find_customer(client, customer_id: str) -> dict | None:
 
 
 def customer_new_expiry(row: dict, add_days: int = 0, set_date: str = None) -> str | None:
-    """Nova expiração (YYYY-MM-DD) a partir do row atual (+ N dias ou data fixa)."""
+    """Nova expiração (YYYY-MM-DD) a partir do row atual (+ N dias ou data fixa).
+
+    CR-04: `expires_at` é 02:59:59Z do dia SEGUINTE (23:59:59 local, painel
+    fixo UTC-3) — a data local real é `[:10]` menos 1 dia. Sem subtrair,
+    cada renovação adiciona +1 dia fantasma cumulativo.
+    """
     from datetime import datetime, timedelta
 
     if set_date:
         base = datetime.strptime(set_date, "%Y-%m-%d")
+    elif row.get("expiry_date"):
+        base = datetime.strptime(row["expiry_date"][:10], "%Y-%m-%d")
+    elif row.get("expires_at"):
+        base = datetime.strptime(row["expires_at"][:10], "%Y-%m-%d") - timedelta(days=1)
+    elif row.get("due_date"):
+        base = datetime.strptime(row["due_date"][:10], "%Y-%m-%d")
     else:
-        cur = row.get("expiry_date") or row.get("expires_at") or row.get("due_date")
-        if not cur:
-            return None
-        base = datetime.strptime(cur[:10], "%Y-%m-%d")
+        return None
     return (base + timedelta(days=add_days)).strftime("%Y-%m-%d")
 
 
