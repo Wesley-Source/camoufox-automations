@@ -33,7 +33,10 @@ def register(app: typer.Typer):
         except Exception as e:
             typer.secho(f"✖ Login falhou: {e}", fg=typer.colors.RED)
             raise typer.Exit(1)
-        typer.secho(f"✔ Token: {sess['token']}", fg=typer.colors.GREEN)
+        typer.secho(
+            f"✔ Token: {sess['token'][:16]}… (use --save para a sessão completa)",
+            fg=typer.colors.GREEN,
+        )  # CR-14: token completo não vai pro stdout/histórico
         if save:
             with open(SESSION_FILE, "w") as f:
                 json.dump(sess, f, indent=2)
@@ -89,6 +92,7 @@ def register(app: typer.Typer):
         email: str = typer.Option(None, help="Email (padrão: {username}@local.test)."),
         connections: int = typer.Option(1, help="Nº de conexões."),
         password: str = typer.Option(None, help="Senha (padrão: gerada; só letras/números/-/@/_)."),
+        show_password: bool = typer.Option(False, "--show-password", help="Mostra a senha em claro."),
     ):
         """Cria um cliente no painel Sigma."""
         pwd = password or secrets.token_urlsafe(12)
@@ -104,7 +108,9 @@ def register(app: typer.Typer):
             typer.secho(f"✖ Create falhou: {e}", fg=typer.colors.RED)
             raise typer.Exit(1)
         cid = (res.get("data") or {}).get("id") if isinstance(res, dict) else None
-        typer.secho(f"✔ Cliente criado: {username} (id: {cid or '?'}). Senha: {pwd}", fg=typer.colors.GREEN)
+        senha = pwd if show_password else pwd[:3] + "… (repetir com --show-password)"
+        typer.secho(f"✔ Cliente criado: {username} (id: {cid or '?'}). Senha: {senha}",
+                    fg=typer.colors.GREEN)  # CR-14: senha não vaza por padrão
 
     @app.command("sigma-customer-update")
     def cli_sigma_customer_update(

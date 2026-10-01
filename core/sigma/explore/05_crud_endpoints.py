@@ -31,7 +31,7 @@ MAX_FILES = 120  # ponytail: BFS nos imports com teto — SPA carrega ~76 chunks
 # (navegação = GET; nada é preenchido nem enviado).
 KEY_ROUTES = [
     "/customers/add",
-    "/customers/edit/ze15VO34L5",  # id real já exposto no mapa — só renderiza o form
+    "/customers/edit/zz_dummy_route",  # id placeholder — só força lazy-load do chunk do form
     "/customers/renewal-assistant",
     "/customers/migration",
 ]
