@@ -21,6 +21,11 @@ logs/
 
 # Credenciais e artefatos de sessão multi-conta
 sigma_accounts.json
+woodcine_accounts.json
+woodcine_session.json
+woodcine_session.lock
+.woodcine_last_good
+.woodcine_session_*.json
 .sigma_last_good
 .sigma_session_*.json
 
