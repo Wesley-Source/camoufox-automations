@@ -112,11 +112,11 @@ def test_search_customers_parcial_na_api():
     assert search_customers(FakeSearchClient(), "   ") == []
 
 
-def test_mcp_tem_22_tools():
+def test_mcp_tem_26_tools():
     import anyio
     from interfaces.mcp.server import mcp_app
 
     async def _count():
         return len(await mcp_app.list_tools())
 
-    assert anyio.run(_count) == 22  # 14 sigma + 8 woodcine
+    assert anyio.run(_count) == 26  # 14 sigma + 8 woodcine

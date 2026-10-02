@@ -1,4 +1,5 @@
 import json
+import secrets
 import os
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import typer
 from core.woodcine.auth import (
     WOODCINE_ACCOUNTS_FILE,
     WOODCINE_SESSION_FILE,
+    allow_destructive,
     load_accounts,
     load_session,
     login,
@@ -15,7 +17,14 @@ from core.woodcine.auth import (
     session_path_for,
     set_last_good,
 )
-from core.woodcine.api import open_client
+from core.woodcine.api import (
+    customer_new_expiry,
+    find_customer,
+    open_client,
+    project_customer,
+    project_response,
+    set_expiry_on_payload,
+)
 from core.database import list_entities
 from core.woodcine.scraper import (
     SYNCERS,
@@ -209,6 +218,136 @@ def register(app: typer.Typer):
         typer.secho(f"✔ Usuário: {me.get('username')}{conta} | Conta/membership expira: {expiry or 'ilimitado'}", fg=typer.colors.GREEN)
         for kind, n in entities_summary().items():
             typer.echo(f"  {kind:24s} {n}")
+
+    @app.command("woodcine-customer-create")
+    def cli_woodcine_customer_create(
+        username: str = typer.Option(..., help="Username do cliente no painel."),
+        package_id: str = typer.Option(..., help="ID do pacote (ver woodcine-servers-packages)."),
+        server_id: str = typer.Option(..., help="ID do servidor (deve casar com o do pacote)."),
+        name: str = typer.Option(None, help="Nome (padrão: username)."),
+        email: str = typer.Option(None, help="Email (padrão: {username}@local.test)."),
+        connections: int = typer.Option(1, help="Nº de conexões."),
+        password: str = typer.Option(None, help="Senha (padrão: gerada; só letras/números/-/@/_)."),
+        show_password: bool = typer.Option(False, "--show-password", help="Mostra a senha em claro."),
+    ):
+        """
+        Cria um cliente no painel Woodcine.
+
+        Use quando: onboarding de cliente novo. Ache o par package/server
+        com woodcine-servers-packages (pacote de outro servidor dá 400).
+        Retorna: id do cliente + senha (mascarada; --show-password revela).
+        Cuidados: MUTAÇÃO real. Paridade MCP: criar_cliente_woodcine.
+        """
+        pwd = password or secrets.token_urlsafe(12)
+        payload = {
+            "username": username, "password": pwd, "password_confirmation": pwd,
+            "name": name or username, "email": email or f"{username}@local.test",
+            "connections": connections, "server_id": server_id, "package_id": package_id,
+        }
+        try:
+            with open_client() as client:
+                res = client.create_customer(payload)
+        except Exception as e:
+            typer.secho(f"✖ Create falhou: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        cid = (res.get("data") or {}).get("id") if isinstance(res, dict) else None
+        senha = pwd if show_password else pwd[:3] + "… (repetir com --show-password)"
+        typer.secho(f"✔ Cliente criado: {username} (id: {cid or '?'}). Senha: {senha}",
+                    fg=typer.colors.GREEN)  # CR-14: senha não vaza por padrão
+
+    @app.command("woodcine-customer-update")
+    def cli_woodcine_customer_update(
+        customer_id: str = typer.Argument(..., help="ID do cliente."),
+        note: str = typer.Option(None, help="Nova nota."),
+        add_days: int = typer.Option(0, help="Estende a expiração em N dias."),
+        set_expiry: str = typer.Option(None, help="Define expiração fixa YYYY-MM-DD."),
+    ):
+        """
+        Edita nota e/ou expiração de um cliente no Woodcine.
+
+        Use quando: renovação (--add-days) ou ajuste de vencimento/nota.
+        Retorna: confirmação com nova expiração (YYYY-MM-DD).
+        Cuidados: MUTAÇÃO — reenvia o payload completo do row; ao menos
+        uma opção obrigatória. Paridade MCP: editar_cliente_woodcine.
+        """
+        if not (note or add_days or set_expiry):
+            typer.secho("✖ Nada a mudar: use --note, --add-days ou --set-expiry.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        try:
+            with open_client() as client:
+                row = find_customer(client, customer_id)
+                if not row:
+                    typer.secho(f"✖ Cliente {customer_id} não encontrado na lista.", fg=typer.colors.RED)
+                    raise typer.Exit(1)
+                payload = dict(row)
+                if note:
+                    payload["note"] = note
+                new_exp = None
+                if add_days or set_expiry:
+                    new_exp = customer_new_expiry(row, add_days, set_expiry)
+                    if not new_exp:
+                        typer.secho("✖ Row sem data de expiração — use --set-expiry.", fg=typer.colors.RED)
+                        raise typer.Exit(1)
+                    set_expiry_on_payload(row, payload, new_exp)
+                res = client.update_customer(customer_id, payload)
+        except typer.Exit:
+            raise
+        except Exception as e:
+            typer.secho(f"✖ Update falhou: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        extra = f" | expira: {new_exp}" if new_exp else ""
+        typer.secho(f"✔ Cliente {customer_id} atualizado{extra}", fg=typer.colors.GREEN)
+
+    @app.command("woodcine-customer-delete")
+    def cli_woodcine_customer_delete(
+        customer_id: str = typer.Argument(..., help="ID do cliente."),
+        yes: bool = typer.Option(False, "--yes", help="Confirma a exclusão (soft delete)."),
+    ):
+        """
+        Remove um cliente do Woodcine (SOFT delete — restaurável no painel).
+
+        Use quando: o DONO pediu explicitamente a remoção.
+        Retorna: resposta projetada (id/deleted_at/status — sem segredos).
+        Cuidados: exige --yes E SIGMA_ALLOW_DESTRUCTIVE=1 (CR-10: flag
+        preenchida pelo agente não é confirmação). Paridade MCP:
+        excluir_cliente_woodcine(confirmar=True).
+        """
+        if not yes:
+            typer.secho("✖ Destrutivo: confirme com --yes.", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        if not allow_destructive():
+            typer.secho("✖ CR-10: destrutivo exige SIGMA_ALLOW_DESTRUCTIVE=1 no ambiente.",
+                        fg=typer.colors.RED)
+            raise typer.Exit(1)
+        try:
+            with open_client() as client:
+                res = client.delete_customer(customer_id)
+        except Exception as e:
+            typer.secho(f"✖ Delete falhou: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.secho(f"✔ Cliente {customer_id} removido (soft). Resposta: {project_response(res)}",
+                    fg=typer.colors.GREEN)
+
+    @app.command("woodcine-customer-resync")
+    def cli_woodcine_customer_resync(customer_id: str = typer.Argument(..., help="ID do cliente.")):
+        """
+        Força o resync do cliente no servidor IPTV (Woodcine).
+
+        Use quando: cliente atualizou a lista no app e não vê canais novos.
+        Retorna: só campos públicos do cliente (nunca senha/m3u_url).
+        Cuidados: mutação inofensiva (não altera dados). Paridade MCP:
+        resync_cliente_woodcine.
+        """
+        try:
+            with open_client() as client:
+                res = client.resync_customer(customer_id)
+        except Exception as e:
+            typer.secho(f"✖ Resync falhou: {e}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        typer.secho(
+            f"✔ Resync enviado para {customer_id}: {project_customer(res)}",
+            fg=typer.colors.GREEN,
+        )
 
     @app.command("woodcine-servers-packages")
     def cli_woodcine_servers_packages(

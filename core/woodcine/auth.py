@@ -62,10 +62,22 @@ def _attach_api_monitor(page, captured: list):
 def _login_flow(page, username: str, password: str, captured: list):
     page.goto(WOODCINE_URL, wait_until="domcontentloaded", timeout=60_000)
     # O form do SPA demora a renderizar — espera explícita, sem sleep fixo.
-    page.wait_for_selector("input[name=username]", timeout=120_000)
-    page.fill("input[name=username]", username)
+    # v3.94 (FOX SERVERS): quando há uma conta recente, o painel mostra tela
+    # de confirmação ("{username} Último uso") sem nenhum form; clicar no
+    # botão da conta revela o campo de senha.
+    try:
+        page.wait_for_selector("input[name=username]", timeout=20_000)
+    except Exception:
+        btn = page.locator(f"button:has-text('{username}')").first
+        btn.wait_for(state="visible", timeout=60_000)
+        btn.click()
+    page.wait_for_selector("input[name=password]", timeout=120_000)
     page.fill("input[name=password]", password)
-    page.click("#kt_sign_in_submit")
+    try:
+        page.click("#kt_sign_in_submit", timeout=5_000)
+    except Exception:
+        # Tela nova pode não ter o id — Enter no campo de senha submete.
+        page.press("input[name=password]", "Enter")
 
     # Sucesso = token aparece no localStorage (o app salva após o POST).
     try:

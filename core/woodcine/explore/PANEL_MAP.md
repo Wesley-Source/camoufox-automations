@@ -62,8 +62,26 @@ com server_id). Envelope Laravel `{"data": [...]}` em /servers e /packages/list
 - `resync` (`POST /customers/{id}/resync`) retorna a linha COMPLETA — projetar
   campos públicos antes de exibir (nunca password/m3u_url/renew_url)
 
-## Fase 2 (pendente aprovação do mapa)
+## Fase 2 — CRUD portado + probes não-mutantes ✔
 
-Portar api.py/scraper.py com kinds prefixados `woodcine.*` na mesma
-`panel_entities`; CLI/MCP site-aware; CRUD por último (snapshots 06 antes/
-depois, `zz_test_*`, aprovação explícita).
+Portado do sigma com kinds prefixados `woodcine.*` na mesma `panel_entities`
+(customer/expiring/dashboard_chart/dashboard_metric/reseller/customer_stats/
+server/package). `WoodcineApiClient` + CLI `woodcine-*` + 26 tools MCP.
+
+**Login v3.94** (diferente do lider v3.93): com conta recente o painel mostra
+tela de confirmação (botão `{username} Último uso`) em vez do form clássico —
+`_login_flow` clica no botão da conta, depois preenche `input[name=password]`
+(submit via `#kt_sign_in_submit` ou Enter).
+
+**Gates destrutivos**: `SIGMA_ALLOW_DESTRUCTIVE=1` + `--yes` (CLI) /
+`confirmar=True` (MCP). Resync/editar projetam `project_customer` (nunca
+password/m3u_url/renew_url).
+
+**Validação sem mutação** (créditos limitados — nunca criar entidade real):
+- probe 422: POST /customers com payload inválido (`username: '!!!'`) →
+  Laravel valida antes de criar; retorna 422 nomeando campos, cria NADA
+- probe 404: PUT/DELETE /customers/zz_probe_fake → 404, ninguém tocado
+- tripwire: snapshot de clientes (meta.total=7876) antes/depois de cada
+  probe — idêntico, zero divergência; espelho local 2500 clientes em
+  `woodcine.customer`
+

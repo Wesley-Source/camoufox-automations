@@ -1,12 +1,22 @@
 import json
 import os
+import secrets
 from typing import Literal
 
 import anyio
 
-from core.woodcine.api import open_client, project_customer, search_customers
+from core.woodcine.api import (
+    customer_new_expiry,
+    find_customer,
+    open_client,
+    project_customer,
+    project_response,
+    search_customers,
+    set_expiry_on_payload,
+)
 from core.database import list_entities, search_entities
 from core.woodcine.auth import (
+    allow_destructive,
     load_accounts,
     load_session,
     login,
@@ -167,6 +177,79 @@ WoodcineSyncWhat = Literal[
 ]
 
 
+def _criar_cliente_woodcine(username: str, package_id: str, server_id: str,
+                            connections: int = 1, password: str = None,
+                            name: str = None, email: str = None,
+                            mostrar_senha: bool = False) -> str:
+    pwd = password or secrets.token_urlsafe(12)
+    payload = {
+        "username": username,
+        "password": pwd,
+        "password_confirmation": pwd,
+        "name": name or username,
+        "email": email or f"{username}@local.test",
+        "connections": connections,
+        "server_id": server_id,
+        "package_id": package_id,
+    }
+    try:
+        with open_client() as client:
+            res = client.create_customer(payload)
+    except Exception as e:
+        return f"Criação falhou: {e}"
+    cid = (res.get("data") or {}).get("id") if isinstance(res, dict) else None
+    senha = pwd if mostrar_senha else pwd[:3] + "… (pedir mostrar_senha=True)"
+    return json.dumps({"id": cid, "username": username, "senha": senha}, ensure_ascii=False)
+
+
+def _editar_cliente_woodcine(customer_id: str, note: str = None,
+                             add_days: int = 0, set_expiry: str = None) -> str:
+    if not note and not add_days and not set_expiry:
+        return "Nada a mudar: informe note, add_days ou set_expiry."
+    try:
+        with open_client() as client:
+            row = find_customer(client, customer_id)
+            if not row:
+                return f"Cliente {customer_id} não encontrado no painel."
+            payload = dict(row)
+            if note:
+                payload["note"] = note
+            ymd = customer_new_expiry(row, add_days=add_days, set_date=set_expiry)
+            if ymd is None:
+                return "Row sem campo de expiração — informe set_expiry (YYYY-MM-DD)."
+            set_expiry_on_payload(row, payload, ymd)
+            client.update_customer(customer_id, payload)
+        return json.dumps({"id": str(customer_id), "note": payload.get("note"),
+                           "expira_em": ymd}, ensure_ascii=False)
+    except Exception as e:
+        return f"Edição falhou: {e}"
+
+
+def _excluir_cliente_woodcine(customer_id: str, confirmar: bool = False) -> str:
+    if not confirmar:
+        return "Exclusão exige confirmar=True (soft delete)."
+    if not allow_destructive():
+        return "Gate destrutivo fechado: defina SIGMA_ALLOW_DESTRUCTIVE=1."
+    try:
+        with open_client() as client:
+            res = client.delete_customer(customer_id)
+        return json.dumps({"excluido": str(customer_id),
+                           "resposta": project_response(res)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Exclusão falhou: {e}"
+
+
+def _resync_cliente_woodcine(customer_id: str) -> str:
+    try:
+        with open_client() as client:
+            res = client.resync_customer(customer_id)
+        row = res if isinstance(res, dict) else {}
+        return json.dumps({"id": row.get("id", str(customer_id)),
+                           "cliente": project_customer(row)}, ensure_ascii=False)
+    except Exception as e:
+        return f"Resync falhou: {e}"
+
+
 def register(mcp):
     @mcp.tool()
     async def login_woodcine() -> str:
@@ -275,3 +358,71 @@ def register(mcp):
         sincronizar_woodcine('customers') antes para dados atuais.
         """
         return await anyio.to_thread.run_sync(_listar_clientes_woodcine, pagina, por_pagina)
+
+    @mcp.tool()
+    async def criar_cliente_woodcine(username: str, package_id: str, server_id: str,
+                                     connections: int = 1, password: str = None,
+                                     name: str = None, email: str = None,
+                                     mostrar_senha: bool = False) -> str:
+        """
+        Use quando: precisar cadastrar um cliente novo no painel woodcine.
+
+        Retorna: JSON {id, username, senha} — senha mascarada a menos que
+        mostrar_senha=True.
+
+        Cuidados: package_id e server_id devem ser um par coerente (use
+        listar_pacotes_woodcine); senha só letras/números/-/@/_; se senha
+        não for passada, gera uma automática.
+        """
+        return await anyio.to_thread.run_sync(
+            _criar_cliente_woodcine, username, package_id, server_id,
+            connections, password, name, email, mostrar_senha,
+        )
+
+    @mcp.tool()
+    async def editar_cliente_woodcine(customer_id: str, note: str = None,
+                                      add_days: int = 0, set_expiry: str = None) -> str:
+        """
+        Use quando: precisar anotar ou renovar a expiração de um cliente
+        do woodcine.
+
+        Retorna: JSON {id, note, expira_em} com a nova data (YYYY-MM-DD).
+
+        Cuidados: add_days soma na expiração atual; set_expiry (YYYY-MM-DD)
+        substitui; painel é UTC-3 (grava 02:59:59Z do dia seguinte).
+        Paridade CLI: sigma-customer-update → woodcine-customer-update.
+        """
+        return await anyio.to_thread.run_sync(
+            _editar_cliente_woodcine, customer_id, note, add_days, set_expiry,
+        )
+
+    @mcp.tool()
+    async def excluir_cliente_woodcine(customer_id: str, confirmar: bool = False) -> str:
+        """
+        Use quando: o usuário pedir EXPLICITAMENTE para remover um cliente
+        do painel woodcine.
+
+        Retorna: JSON {excluido, resposta:{id, deleted_at, status}} — soft
+        delete (recuperável via restore no painel).
+
+        Cuidados: DESTRUTIVO — exige confirmar=True E o gate
+        SIGMA_ALLOW_DESTRUCTIVE=1 no ambiente. Confira o id com
+        buscar_cliente_woodcine antes. Paridade CLI: --yes.
+        """
+        return await anyio.to_thread.run_sync(
+            _excluir_cliente_woodcine, customer_id, confirmar,
+        )
+
+    @mcp.tool()
+    async def resync_cliente_woodcine(customer_id: str) -> str:
+        """
+        Use quando: precisar do estado ATUAL de um cliente direto do painel
+        woodcine (expiração, status, nota) sem esperar sync.
+
+        Retorna: JSON {id, cliente:{campos públicos}} — NUNCA senha nem
+        m3u_url/renew_url (contêm credenciais).
+
+        Cuidados: dispara re-sincronização no provedor do cliente (GET no
+        upstream, read-only). Paridade CLI: woodcine-customer-resync.
+        """
+        return await anyio.to_thread.run_sync(_resync_cliente_woodcine, customer_id)
