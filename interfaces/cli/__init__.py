@@ -5,10 +5,11 @@ from core.automations import AUTOMATIONS
 cli_app = typer.Typer(help="CLI Hub de Automações")
 
 # Um módulo por site; cada um registra seus comandos no app.
-from interfaces.cli import ecommerce, sigma  # noqa: E402
+from interfaces.cli import ecommerce, sigma, woodcine  # noqa: E402
 
 ecommerce.register(cli_app)
 sigma.register(cli_app)
+woodcine.register(cli_app)
 
 
 _STATUS_COR = {"ok": typer.colors.GREEN, "planned": typer.colors.YELLOW, "blocked": typer.colors.RED}
