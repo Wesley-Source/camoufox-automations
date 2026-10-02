@@ -37,3 +37,8 @@ core/*/explore/out/
 
 # Grafo gerado
 graphify-out/
+blackbr_accounts.json
+blackbr_session.json
+blackbr_session.lock
+.blackbr_last_good
+.blackbr_session_*.json
