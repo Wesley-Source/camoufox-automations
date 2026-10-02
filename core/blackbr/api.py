@@ -354,7 +354,15 @@ class BlackbrApiClient:
         return self._mutate("POST", "/customers", payload)
 
     def update_customer(self, customer_id: str, payload: dict) -> dict | list:
-        """PUT /customers/{id} — edita; envie o payload completo (create) + mudanças."""
+        """PUT /customers/{id} — edita; envie o payload completo (create) + mudanças.
+
+        Vendor blackbr (descoberta do lifecycle 07): o update PROÍBE
+        username/password/password_confirmation — retorna 422
+        'The username field is prohibited.'. O sigma aceita dict(row)
+        completo; aqui removemos os campos proibidos no ponto único.
+        """
+        payload = {k: v for k, v in payload.items()
+                   if k not in ("username", "password", "password_confirmation")}
         return self._mutate("PUT", f"/customers/{quote(str(customer_id), safe='')}", payload)
 
     def resync_customer(self, customer_id: str) -> dict | list:

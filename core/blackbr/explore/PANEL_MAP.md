@@ -59,3 +59,38 @@ Port do api.py/scraper.py quase direto do woodcine (mesma API), kinds
 `blackbr.*` na mesma `panel_entities`; CLI `blackbr-*` + MCP. CRUD por
 último e SEM criar entidade real (créditos pagos) — validação só por
 probes não-mutantes + tripwire.
+
+## Fase 2 — CRUD portado + ciclo real zz_test ✔ (créditos ilimitados, aprovado pelo dono)
+
+Portado do woodcine (mesma API): `BlackbrApiClient`, kinds `blackbr.*`
+(customer/expiring/dashboard_chart/dashboard_metric/reseller/customer_stats/
+server/package), CLI `blackbr-*`, 12 tools MCP, gates `SIGMA_ALLOW_DESTRUCTIVE`
++ `--yes`/`confirmar=True`.
+
+**Validação real (ciclo zz_test, 07_test_client_lifecycle.py)** — único site com
+ ciclo real liberado (créditos ilimitados):
+
+| Passo | Resultado |
+|---|---|
+| probe 422 (create sem server/package) | 422 nomeia campos — cria nada ✔ |
+| create iterativo | 201, id `RXDgZdBqLe` / `loL7Qm4GWX` ✔ |
+| verify-in-list | **casar por ID** (username de 31 chars é truncado pelo painel — match exato falha) ✔ |
+| update/renovar | **PROÍBE username/password/password_confirmation** (422 'field is prohibited' — difere do sigma); fix central em `update_customer` faz pop; note aplicada ✔ |
+| resync | 200 ✔ |
+| delete | 200 soft (`deleted_at`) + gone ✔ |
+| tripwire | meta.total estável antes/depois (delta 0) ✔ |
+
+**Churn policy**: painel COMPARTILHADO e vivo (+4–7 clientes no ciclo, e ~5300
+rows mudam `m3u_url`/`m3u_url_short` por rotação de domínios de stream:
+blackbr.space ↔ blackbr.fun ↔ brblack.site ↔ zro1.site ↔ z1sv.site). Diff
+antes/depois é INFORMATIVO para churn de outros revendedores; invariant de
+segurança = nosso zz_test sumiu e nada real foi tocado (guard de URL permite
+só mutações no ID do teste).
+
+**Perf**: snapshot completo = 103 páginas (~7 min via browser transport);
+verify de cliente novo = página 1 (sort `created_at DESC`). Lista completa 2x
+só no 07; fluxos rápidos usam `meta.total` + página 1.
+
+**Campos**: `expira`/`expiry_date` veio `None` no row pós-edit — renovação por
+`note` aplicada confirmada; mapear campo de expiração real do blackbr antes de
+depender de `expiry_date` (provável `due_date`/outro nome).

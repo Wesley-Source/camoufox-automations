@@ -94,3 +94,11 @@ def test_project_customer_nunca_vaza_segredos():
     out = wapi.project_customer(row)
     assert out["username"] == "u"
     assert "password" not in out and "m3u_url" not in out and "renew_url" not in out
+
+
+def test_update_remove_campos_proibidos_blackbr():
+    # vendor: update do blackbr rejeita username/password (422 provado no ciclo real)
+    c = make_client([FakeResponse(200, "{}")])
+    c.update_customer("ID1", {"username": "u", "password": "p",
+                              "password_confirmation": "p", "note": "n"})
+    assert c._session.calls[0]["json"] == {"note": "n"}
