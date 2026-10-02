@@ -3,6 +3,7 @@ from typing import Literal
 
 from core.automations import AUTOMATIONS
 
+from interfaces.mcp.blackbr import register as reg_blackbr
 from interfaces.mcp.ecommerce import register as reg_ecommerce
 from interfaces.mcp.sigma import register as reg_sigma
 from interfaces.mcp.woodcine import register as reg_woodcine
@@ -12,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 mcp_app = FastMCP("AutomationHubMCP")
 
 # Um módulo por site; cada um registra suas tools no servidor.
+reg_blackbr(mcp_app)
 reg_ecommerce(mcp_app)
 reg_sigma(mcp_app)
 reg_woodcine(mcp_app)

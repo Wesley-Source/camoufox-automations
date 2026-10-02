@@ -4,7 +4,7 @@ import json
 import pytest
 
 import core.database as database
-import core.blackbr.scraper as wc
+import core.blackbr.scraper as bb
 
 
 class FakeClient:
@@ -54,23 +54,23 @@ def test_sync_customers_kinds_prefixados(tmp_db, monkeypatch):
         saved[kind] = len(pairs)
         return len(pairs)
 
-    monkeypatch.setattr(wc, "save_entities", fake_save)
-    monkeypatch.setattr(wc, "save_raw", lambda url, raw: None)
-    res = wc.sync_customers(FakeClient(), pages=1)
+    monkeypatch.setattr(bb, "save_entities", fake_save)
+    monkeypatch.setattr(bb, "save_raw", lambda url, raw: None)
+    res = bb.sync_customers(FakeClient(), pages=1)
     assert "blackbr.customer" in saved
     assert res["synced"] == 3 and res["pages"] == 1
 
 
 def test_todos_os_syncs_usam_prefixo_blackbr(tmp_db, monkeypatch):
     calls = []
-    monkeypatch.setattr(wc, "save_entities", lambda k, pairs: calls.append(k) or len(list(pairs)))
-    monkeypatch.setattr(wc, "save_raw", lambda url, raw: None)
+    monkeypatch.setattr(bb, "save_entities", lambda k, pairs: calls.append(k) or len(list(pairs)))
+    monkeypatch.setattr(bb, "save_raw", lambda url, raw: None)
     c = FakeClient()
-    wc.sync_expiring(c)
-    wc.sync_dashboard(c)
-    wc.sync_resellers(c)
-    wc.sync_statistics(c)
-    wc.sync_servers_packages(c)
+    bb.sync_expiring(c)
+    bb.sync_dashboard(c)
+    bb.sync_resellers(c)
+    bb.sync_statistics(c)
+    bb.sync_servers_packages(c)
     assert calls and all(k.startswith("blackbr.") for k in calls)
     assert set(calls) == {
         "blackbr.expiring", "blackbr.dashboard_chart", "blackbr.dashboard_metric",
@@ -79,27 +79,27 @@ def test_todos_os_syncs_usam_prefixo_blackbr(tmp_db, monkeypatch):
 
 
 def test_sync_all_seis_resultados(tmp_db, monkeypatch):
-    monkeypatch.setattr(wc, "save_entities", lambda k, pairs: len(list(pairs)))
-    monkeypatch.setattr(wc, "save_raw", lambda url, raw: None)
-    res = wc.sync_all(FakeClient(), pages=1)
+    monkeypatch.setattr(bb, "save_entities", lambda k, pairs: len(list(pairs)))
+    monkeypatch.setattr(bb, "save_raw", lambda url, raw: None)
+    res = bb.sync_all(FakeClient(), pages=1)
     assert len(res) == 6
     assert all(r["status"] == "synced" for r in res)
 
 
 def test_payload_valido_e_upsert_sem_duplicar(tmp_db, monkeypatch):
-    monkeypatch.setattr(wc, "save_raw", lambda url, raw: None)
+    monkeypatch.setattr(bb, "save_raw", lambda url, raw: None)
     c = FakeClient()
-    wc.sync_customers(c, pages=1)
-    wc.sync_customers(c, pages=1)  # re-sync: UPSERT não duplica
+    bb.sync_customers(c, pages=1)
+    bb.sync_customers(c, pages=1)  # re-sync: UPSERT não duplica
     assert database.count_entities("blackbr.customer") == 3  # mesmos 3 ids re-upsertados
 
 
 def test_entities_summary_mostra_ambos_sites(tmp_db, monkeypatch):
-    monkeypatch.setattr(wc, "save_raw", lambda url, raw: None)
-    wc.sync_resellers(FakeClient())
+    monkeypatch.setattr(bb, "save_raw", lambda url, raw: None)
+    bb.sync_resellers(FakeClient())
     from core.database import save_entity
     save_entity("customer", "lider1", {"username": "lider"})
-    s = wc.entities_summary()
+    s = bb.entities_summary()
     assert s["blackbr.reseller"] == 1
     # coexistem no mesmo banco: kind do lider visível via count direto
     assert database.count_entities("customer") == 1
