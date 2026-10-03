@@ -28,6 +28,12 @@ SITES = {
         "url": "https://painelblackbr.com",
         "monitor_scope": "host",
     },
+    "core.newmais.auth": {
+        "prefix": "NEWMAIS",
+        "files": ("NEWMAIS_SESSION_FILE", "NEWMAIS_ACCOUNTS_FILE", "NEWMAIS_LAST_GOOD_FILE"),
+        "url": "https://newmais.sigma.vin",
+        "monitor_scope": "/api",
+    },
 }
 
 # Contrato comum: tudo que consumers (cli/mcp/api/testes) importam dos auth.py.
@@ -80,6 +86,7 @@ API_SITES = (
     ("sigma", "core.sigma.api", "SIGMA", "SESSION_FILE"),
     ("woodcine", "core.woodcine.api", "WOODCINE", "WOODCINE_SESSION_FILE"),
     ("blackbr", "core.blackbr.api", "BLACKBR", "BLACKBR_SESSION_FILE"),
+    ("newmais", "core.newmais.api", "NEWMAIS", "NEWMAIS_SESSION_FILE"),
 )
 
 
@@ -110,6 +117,7 @@ SCRAPER_SITES = (
     ("sigma", "core.sigma.scraper", "SIGMA_API", ""),
     ("woodcine", "core.woodcine.scraper", "WOODCINE_API", "woodcine."),
     ("blackbr", "core.blackbr.scraper", "BLACKBR_API", "blackbr."),
+    ("newmais", "core.newmais.scraper", "NEWMAIS_API", "newmais."),
 )
 
 SCRAPER_COMMON = (

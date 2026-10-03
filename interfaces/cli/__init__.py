@@ -5,9 +5,10 @@ from core.automations import AUTOMATIONS
 cli_app = typer.Typer(help="CLI Hub de Automações")
 
 # Um módulo por site; cada um registra seus comandos no app.
-from interfaces.cli import blackbr, ecommerce, sigma, woodcine  # noqa: E402
+from interfaces.cli import blackbr, ecommerce, newmais, sigma, woodcine  # noqa: E402
 
 blackbr.register(cli_app)
+newmais.register(cli_app)
 ecommerce.register(cli_app)
 sigma.register(cli_app)
 woodcine.register(cli_app)
