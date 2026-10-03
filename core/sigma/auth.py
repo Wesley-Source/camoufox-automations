@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 import typer
 
-from core.browser import BrowserEngine
+from core.browser import BrowserEngine, is_cf_challenge
 
 SIGMA_URL = "https://lideriptv.sigma.st"
 SIGMA_API = SIGMA_URL + "/api"
@@ -28,6 +28,7 @@ SESSION_FILE = str(Path(__file__).resolve().parents[2] / "sigma_session.json")
 ACCOUNTS_FILE = str(Path(__file__).resolve().parents[2] / "sigma_accounts.json")
 LAST_GOOD_FILE = str(Path(__file__).resolve().parents[2] / ".sigma_last_good")  # CR-25
 _VALIDATE_SETTLE = 8  # ponytail: janela p/ o SPA devolver 401 ou redirecionar; subir se o painel ficar mais lento
+_LOGIN_FORM_TIMEOUT = 120_000  # Hermes G2/G6: primeiro wait pós-goto ≥20s, constante nomeada
 
 
 def _attach_api_monitor(page, captured: list):
@@ -61,8 +62,13 @@ def _attach_api_monitor(page, captured: list):
 
 def _login_flow(page, username: str, password: str, captured: list):
     page.goto(SIGMA_URL, wait_until="domcontentloaded", timeout=60_000)
+    # Hermes G4: challenge do CF = esperar, não "form nao encontrado".
+    for _ in range(6):
+        if not is_cf_challenge(page):
+            break
+        time.sleep(5)
     # O form do SPA demora a renderizar — espera explícita, sem sleep fixo.
-    page.wait_for_selector("input[name=username]", timeout=120_000)
+    page.wait_for_selector("input[name=username]", timeout=_LOGIN_FORM_TIMEOUT)
     page.fill("input[name=username]", username)
     page.fill("input[name=password]", password)
     page.click("#kt_sign_in_submit")

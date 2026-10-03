@@ -39,3 +39,24 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    `<site>_accounts.json` 0600 gitignored, `explore/` com guard, `PANEL_MAP.md`,
    kinds prefixados `<site>.*` no banco). Explorar primeiro, mapear, SÓ DEPOIS
    portar api/scraper/CLI/MCP — e CRUD por último.
+
+## Operational guidelines (browser/CF) — post-mortem Hermes 02/10/2026
+
+1. **Proxy no boot do browser**: `BrowserEngine.get_page` já aplica o fallback
+   da env `SIGMA_PROXY` internamente — nunca abra browser sem proxy em painel
+   atrás de Cloudflare (egress da máquina = CF bloqueia).
+2. **Primeiro `wait_for_selector` pós-goto ≥20s** e sempre via constante
+   nomeada `_LOGIN_FORM_TIMEOUT` em cada `core/*/auth.py` (CF pode levar ~10s;
+   timeouts curtos dão falha intermitente que parece "form não encontrado").
+3. **Validação de sessão sempre com cheque ativo** (fetch GET read-only tipo
+   `/api/auth/me` com Bearer) além dos sinais passivos — página de challenge
+   do CF passa na checagem passiva e daria falso positivo "sessão válida".
+4. **CF = esperar, não falhar**: `_login_flow` e validação usam
+   `core.browser.is_cf_challenge(page)` (title 'Just a moment'/'Attention
+   Required' ou elementos de challenge) e aguardam em loop antes de concluir
+   que o form não existe.
+5. **PARIDADE entre auth.py's**: correção num painel replica nos outros NA
+   MESMA rodada (os 3 são gêmeos). Painel novo = copiar o auth.py mais
+   completo e conferir item a item.
+6. **NÃO fazer**: múltiplos browsers/logins simultâneos (red flag CF), raspar
+   DOM quando existe API JSON, repetir requests sem rate limit.

@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 import typer
 
-from core.browser import BrowserEngine
+from core.browser import BrowserEngine, is_cf_challenge
 
 BLACKBR_URL = "https://painelblackbr.com"
 BLACKBR_API = BLACKBR_URL + "/api"
@@ -28,6 +28,7 @@ BLACKBR_SESSION_FILE = str(Path(__file__).resolve().parents[2] / "blackbr_sessio
 BLACKBR_ACCOUNTS_FILE = str(Path(__file__).resolve().parents[2] / "blackbr_accounts.json")
 BLACKBR_LAST_GOOD_FILE = str(Path(__file__).resolve().parents[2] / ".blackbr_last_good")  # CR-25
 _VALIDATE_SETTLE = 8  # ponytail: janela p/ o SPA devolver 401 ou redirecionar; subir se o painel ficar mais lento
+_LOGIN_FORM_TIMEOUT = 20_000  # Hermes G2/G6: CF levou ~10s ao vivo; 8s falhou intermitente
 
 
 def _attach_api_monitor(page, captured: list):
@@ -65,6 +66,11 @@ def _attach_api_monitor(page, captured: list):
 
 def _login_flow(page, username: str, password: str, captured: list):
     page.goto(BLACKBR_URL, wait_until="domcontentloaded", timeout=60_000)
+    # Hermes G4: challenge do CF = esperar, não "form nao encontrado".
+    for _ in range(6):
+        if not is_cf_challenge(page):
+            break
+        time.sleep(5)
     # Vendor desconhecido (NÃO é sigma.st): não assumimos seletores do Sigma.
     # Aceitamos os padrões mais comuns de form; se nada renderizar, dumpamos
     # o DOM em out/ e adaptamos com evidência (mesma tática que revelou o
@@ -73,7 +79,7 @@ def _login_flow(page, username: str, password: str, captured: list):
     for sel in ("input[name=username]", "input[name=email]",
                 "input[type=email]", "input[type=text]"):
         try:
-            page.wait_for_selector(sel, timeout=8_000, state="visible")
+            page.wait_for_selector(sel, timeout=_LOGIN_FORM_TIMEOUT, state="visible")
             user_sel = sel
             break
         except Exception:
@@ -89,7 +95,7 @@ def _login_flow(page, username: str, password: str, captured: list):
         )
     page.fill(user_sel, username)
     try:
-        page.wait_for_selector("input[type=password]", timeout=8_000, state="visible")
+        page.wait_for_selector("input[type=password]", timeout=_LOGIN_FORM_TIMEOUT, state="visible")
     except Exception:
         # Painel estilo v3.94: tile "última conta" antes do campo de senha.
         btn = page.locator(f"button:has-text('{username}')").first
@@ -236,9 +242,10 @@ def _restore_session(page, session: dict) -> None:
 
 def _session_still_valid(page, captured: list, token: str = "") -> bool:
     """
-    Validade decidida passivamente (vendor desconhecido — não há endpoint
-    /api/auth/me garantido): redireção pra página de login, form de login
-    renderizado ou qualquer 401 do host do painel na janela de observação.
+    Validade em duas camadas: passiva (redireção pra login, form renderizado,
+    401 do host) + cheque ATIVO /api/auth/me (Hermes G3 — a página de
+    challenge do CF passa na passiva e daria falso positivo; /api/auth/me
+    está provado 200 no probe da Fase 1).
     """
     try:
         page.goto(BLACKBR_URL, wait_until="domcontentloaded", timeout=60_000)
@@ -252,8 +259,13 @@ def _session_still_valid(page, captured: list, token: str = "") -> bool:
         host = BLACKBR_URL.replace("https://", "")
         if any(host in c["url"] and c["status"] == 401 for c in captured):
             return False
-        # URL do painel + sem form de login + zero 401 = sessão viva.
-        return True
+        # Cheque ativo: 401 aqui também é sessão morta, mesmo sem sinais passivos.
+        status = page.evaluate(
+            "async (t) => (await fetch('/api/auth/me',"
+            " {headers: {Authorization: 'Bearer ' + t}})).status",
+            token or "",
+        )
+        return status == 200
     except Exception as exc:
         # M7: erro de rede/transporte ≠ sessão morta. Propagar — relogar por
         # falha transitória desperdiça ~4min e mata uma sessão que estava boa.

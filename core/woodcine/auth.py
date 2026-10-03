@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 import typer
 
-from core.browser import BrowserEngine
+from core.browser import BrowserEngine, is_cf_challenge
 
 WOODCINE_URL = "https://woodcine.sigma.st"
 WOODCINE_API = WOODCINE_URL + "/api"
@@ -28,6 +28,7 @@ WOODCINE_SESSION_FILE = str(Path(__file__).resolve().parents[2] / "woodcine_sess
 WOODCINE_ACCOUNTS_FILE = str(Path(__file__).resolve().parents[2] / "woodcine_accounts.json")
 WOODCINE_LAST_GOOD_FILE = str(Path(__file__).resolve().parents[2] / ".woodcine_last_good")  # CR-25
 _VALIDATE_SETTLE = 8  # ponytail: janela p/ o SPA devolver 401 ou redirecionar; subir se o painel ficar mais lento
+_LOGIN_FORM_TIMEOUT = 30_000  # Hermes G2/G6: CF pode levar ~10s; v3.94 borderline em 20s
 
 
 def _attach_api_monitor(page, captured: list):
@@ -61,12 +62,17 @@ def _attach_api_monitor(page, captured: list):
 
 def _login_flow(page, username: str, password: str, captured: list):
     page.goto(WOODCINE_URL, wait_until="domcontentloaded", timeout=60_000)
+    # Hermes G4: challenge do CF = esperar, não "form nao encontrado".
+    for _ in range(6):
+        if not is_cf_challenge(page):
+            break
+        time.sleep(5)
     # O form do SPA demora a renderizar — espera explícita, sem sleep fixo.
     # v3.94 (FOX SERVERS): quando há uma conta recente, o painel mostra tela
     # de confirmação ("{username} Último uso") sem nenhum form; clicar no
     # botão da conta revela o campo de senha.
     try:
-        page.wait_for_selector("input[name=username]", timeout=20_000)
+        page.wait_for_selector("input[name=username]", timeout=_LOGIN_FORM_TIMEOUT)
     except Exception:
         btn = page.locator(f"button:has-text('{username}')").first
         btn.wait_for(state="visible", timeout=60_000)
