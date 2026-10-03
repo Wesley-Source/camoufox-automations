@@ -65,6 +65,9 @@ class FakePage:
         if "auth/me" in script:
             tok = args[0] if args else ""
             return 401 if tok in self.dead_tokens else 200
+        if "auth/login" in script:
+            # fetch in-page do _login_flow: contrato real = dict {ok: bool}
+            return {"ok": True}
         if "getItem" in script:
             return "tok_relogin"
         if "fromEntries" in script:

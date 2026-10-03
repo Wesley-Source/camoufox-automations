@@ -41,23 +41,38 @@ def _login_flow(page, username: str, password: str, captured: list):
         if not is_cf_challenge(page):
             break
         time.sleep(5)
-    # O form do SPA demora a renderizar — espera explícita, sem sleep fixo.
-    # v3.94 (FOX SERVERS): quando há uma conta recente, o painel mostra tela
-    # de confirmação ("{username} Último uso") sem nenhum form; clicar no
-    # botão da conta revela o campo de senha.
-    try:
-        page.wait_for_selector("input[name=username]", timeout=_LOGIN_FORM_TIMEOUT)
-    except Exception:
-        btn = page.locator(f"button:has-text('{username}')").first
-        btn.wait_for(state="visible", timeout=60_000)
-        btn.click()
-    page.wait_for_selector("input[name=password]", timeout=120_000)
-    page.fill("input[name=password]", password)
-    try:
-        page.click("#kt_sign_in_submit", timeout=5_000)
-    except Exception:
-        # Tela nova pode não ter o id — Enter no campo de senha submete.
-        page.press("input[name=password]", "Enter")
+    # CF v3.94 do FOX SERVERS segura a RESPOSTA do POST do form nativo em
+    # um sub-challenge invisível (GET passa, POST de login trava o SPA pra
+    # sempre). O endpoint em si funciona: fetch() de dentro da página —
+    # mesma origem, herda cookies + cf_clearance do browser real — responde
+    # 200 em segundos. Login via fetch, token direto no localStorage.
+    ok = page.evaluate(
+        """
+        async (creds) => {
+          const r = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify(creds),
+          });
+          if (r.status !== 200) return {ok: false, status: r.status};
+          const data = await r.json();
+          const token = (typeof data.token === 'string') ? data.token
+                        : (data.access_token || null);
+          if (!token) return {ok: false, err: 'sem token'};
+          localStorage.setItem('token', token);
+          return {ok: true};
+        }
+        """,
+        {"username": username, "password": password},
+    )
+    if not ok.get("ok"):
+        # 401 = senha errada; 403/429 = CF/limite. Uma tentativa errada em
+        # /login conta pro ban permanente — nunca repetir em loop.
+        raise RuntimeError(f"Login woodcine falhou: {ok}")
 
     # Sucesso = token no localStorage. O FOX v3.94 pode navegar destruindo o
     # contexto JS e o monitor nem sempre captura o POST — o token no
