@@ -56,7 +56,10 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    Required' ou elementos de challenge) e aguardam em loop antes de concluir
    que o form não existe.
 5. **PARIDADE entre auth.py's**: correção num painel replica nos outros NA
-   MESMA rodada (os 3 são gêmeos). Painel novo = copiar o auth.py mais
-   completo e conferir item a item.
+   MESMA rodada (os 3 são gêmeos). A base compartilhada é `core/panel_auth.py`
+   — correção vai no BASE, não nas cópias; `core/<site>/auth.py` é só
+   config + `_login_flow` + wrappers. Painel novo = copiar o auth.py mais
+   completo e conferir item a item. `tests/test_auth_parity.py` falha se a
+   superfície pública divergir.
 6. **NÃO fazer**: múltiplos browsers/logins simultâneos (red flag CF), raspar
    DOM quando existe API JSON, repetir requests sem rate limit.

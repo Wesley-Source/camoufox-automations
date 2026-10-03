@@ -1,4 +1,6 @@
 """Core não pode poluir stdout (suja o JSON-RPC do MCP) — só stderr."""
+import typer
+
 import core.sigma.auth as auth
 from core.sigma.auth import ensure_logged_page
 
@@ -51,7 +53,9 @@ class FakeCtx:
 def test_secho_do_core_vai_para_stderr(monkeypatch, tmp_path):
     """Caminho de reuso da sessão: todo secho do core deve ter err=True."""
     calls = []
-    monkeypatch.setattr(auth.typer, "secho", lambda *a, **kw: calls.append(kw))
+    # secho do core vive em core/panel_auth.py — patch global do typer pega
+    # qualquer módulo que o importe (typer é singleton).
+    monkeypatch.setattr(typer, "secho", lambda *a, **kw: calls.append(kw))
     monkeypatch.setattr(auth, "_VALIDATE_SETTLE", 0)
 
     sess = {"token": "1|ok", "cookies": [], "local_storage": {}}
