@@ -228,7 +228,7 @@ def register(app: typer.Typer):
     @app.command("sigma-customer-create")
     def cli_sigma_customer_create(
         username: str = typer.Option(..., help="Username do cliente no painel."),
-        package_id: str = typer.Option(..., help="ID do pacote (ex.: rdqLkQjWAE; ver GET /packages/list)."),
+        package_id: str = typer.Option(..., help="ID do pacote (ex.: abc123XYZ; ver GET /packages/list)."),
         server_id: str = typer.Option(..., help="ID do servidor (deve casar com o do pacote)."),
         name: str = typer.Option(None, help="Nome (padrão: username)."),
         email: str = typer.Option(None, help="Email (padrão: {username}@local.test)."),

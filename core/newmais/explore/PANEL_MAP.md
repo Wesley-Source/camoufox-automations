@@ -9,7 +9,7 @@ Stack: família SIGMA confirmada — mesma base `/api/`, envelope Laravel
 - **Bearer puro**: o login NÃO seta cookies — só token no localStorage.
   `load_session` da base (`core/panel_auth.py`) foi ajustado para aceitar
   sessão com token e cookies vazios (cookies são suplementares).
-- Login clássico: `input[name=username]` + `#kt_sign_in_submit` (sem tile
+- Login clássico: `input[name=username]` + `#kt_sign_in_submit` (fallback de tile existe no código, não observado
   v3.94 do woodcine). `_LOGIN_FORM_TIMEOUT=30_000` (CF ~10s, Hermes G2).
 - Multi-conta: `newmais_accounts.json` (0600 gitignored) + `.newmais_last_good`.
 - Conta ativa: Techcarlos2 (créditos LIMITADOS — regra 2 do AGENTS.md em
@@ -37,7 +37,7 @@ Menu confirma painel de REVENDAS com CRÉDITOS: "Comprar Créditos",
   `/api/dashboard/metrics/recovery`, `/api/dashboard/ai-analysis`
 - Falhas conhecidas (iguais nos irmãos): `/api/settings` 500,
   `/api/statistics/customers` 404, `/api/statistics/resellers` 404
-- Monitor do explorador em modo `host` (config do site) — sem suposição
+- Monitor do explorador em modo `/api` (config do site) — sem suposição
   de prefixo de API.
 
 ## Fase 2 — CRUD portado + probes não-mutantes ✔

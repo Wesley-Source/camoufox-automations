@@ -372,7 +372,8 @@ def register(mcp):
 
         Cuidados: package_id e server_id devem ser um par coerente (use
         listar_pacotes_newmais); senha só letras/números/-/@/_; se senha
-        não for passada, gera uma automática.
+        não for passada, gera uma automática. MUTAÇÃO (cria no
+        painel real). Paridade CLI: newmais-customer-create.
         """
         return await anyio.to_thread.run_sync(
             _criar_cliente_newmais, username, package_id, server_id,
@@ -389,8 +390,8 @@ def register(mcp):
         Retorna: JSON {id, note, expira_em} com a nova data (YYYY-MM-DD).
 
         Cuidados: add_days soma na expiração atual; set_expiry (YYYY-MM-DD)
-        substitui; painel é UTC-3 (grava 02:59:59Z do dia seguinte).
-        Paridade CLI: sigma-customer-update → newmais-customer-update.
+        substitui; painel é UTC-3 (grava 02:59:59Z do dia seguinte). MUTAÇÃO (edita no
+        painel real). Paridade CLI: newmais-customer-update.
         """
         return await anyio.to_thread.run_sync(
             _editar_cliente_newmais, customer_id, note, add_days, set_expiry,
@@ -407,7 +408,7 @@ def register(mcp):
 
         Cuidados: DESTRUTIVO — exige confirmar=True E o gate
         SIGMA_ALLOW_DESTRUCTIVE=1 no ambiente. Confira o id com
-        buscar_cliente_newmais antes. Paridade CLI: --yes.
+        buscar_cliente_newmais antes. Paridade CLI: newmais-customer-delete ID --yes.
         """
         return await anyio.to_thread.run_sync(
             _excluir_cliente_newmais, customer_id, confirmar,

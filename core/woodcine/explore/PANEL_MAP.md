@@ -1,4 +1,4 @@
-# PANEL MAP — woodcine.sigma.st
+# PANEL MAP — woodcine.sigma.st (mapeado em 01/10/2025)
 
 Mapeamento não-destrutivo (guard read-only em 100% das execuções, zero mutação).
 Método: playbook 01→04 (sessão → mapa passivo → crawl com blocklist → probe GET).
@@ -66,12 +66,15 @@ com server_id). Envelope Laravel `{"data": [...]}` em /servers e /packages/list
 
 Portado do sigma com kinds prefixados `woodcine.*` na mesma `panel_entities`
 (customer/expiring/dashboard_chart/dashboard_metric/reseller/customer_stats/
-server/package). `WoodcineApiClient` + CLI `woodcine-*` + 26 tools MCP.
+server/package). `WoodcineApiClient` + CLI `woodcine-*` + 12 tools MCP.
 
 **Login v3.94** (diferente do lider v3.93): com conta recente o painel mostra
 tela de confirmação (botão `{username} Último uso`) em vez do form clássico —
 `_login_flow` clica no botão da conta, depois preenche `input[name=password]`
-(submit via `#kt_sign_in_submit` ou Enter).
+(submit via `#kt_sign_in_submit` ou Enter). Sucesso = polling direto de
+`localStorage.token` por 90s — única fonte da verdade (a navegação
+pós-login destrói o contexto JS; monitor nem sempre captura o POST).
+Fix 8ac91f9.
 
 **Gates destrutivos**: `SIGMA_ALLOW_DESTRUCTIVE=1` + `--yes` (CLI) /
 `confirmar=True` (MCP). Resync/editar projetam `project_customer` (nunca

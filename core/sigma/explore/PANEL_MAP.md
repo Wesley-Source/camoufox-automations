@@ -1,4 +1,4 @@
-# Mapa do painel LIDER SERVERS (lideriptv.sigma.st) — v3.93
+# Mapa do painel LIDER SERVERS (lideriptv.sigma.st) — v3.93 (mapeado em 28/09/2025)
 
 Gerado pelos explorers em `core/sigma/explore/` (tudo GET/read-only; guard
 aborta POST/PUT/PATCH/DELETE no nível do browser). Capturas brutas (com PII)
@@ -101,7 +101,7 @@ Endpoints confirmados (chunk `customer-BPdT3J4I.js` + validação real):
 | Editar/renovar | `PUT /api/customers/{id}` | `200` |
 | Resync no stream | `POST /api/customers/{id}/resync` | `200` |
 | Excluir | `DELETE /api/customers/{id}` | `200 {deleted_at}` — **soft delete** |
-| Restaurar | `POST /api/customers/restore` | `200` |
+| Restaurar | `POST /api/customers/restore` | confirmado só no chunk JS — NUNCA testado |
 | Calcular preço | `POST /api/customers/calculate-plan-price` | — |
 | Gerar credencial | `POST /api/customers/generate-credential` | — |
 
@@ -113,7 +113,7 @@ Endpoints confirmados (chunk `customer-BPdT3J4I.js` + validação real):
   `X-Requested-With: XMLHttpRequest`. Sem eles o Laravel responde validação
   com **redirect → HTML da SPA com 200** (fetch segue o 302) em vez de 422 JSON.
 - Busca `?username=` da lista não é confiável para descoberta — listar com
-  `perPage=500` e filtrar local.
+  `perPage=100 (cap real)` e filtrar local.
 - Exclusão em massa (`POST /customers/mass-delete`), mover reseller
   (`/customers/move`), migração (`/servers/migrate-single-customer`) e
   campanhas de recovery: **mapeados, nunca testados** (risco em massa).

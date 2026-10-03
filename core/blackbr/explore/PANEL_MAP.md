@@ -1,4 +1,4 @@
-# PANEL_MAP — painelblackbr.com
+# PANEL_MAP — painelblackbr.com (mapeado em 02/10/2025)
 
 Fase 1 concluída (exploração read-only com guard — regra do AGENTS.md).
 Login: MarcioNPTV (multi-conta via `blackbr_accounts.json` 0600 gitignored).
@@ -18,11 +18,11 @@ Login: MarcioNPTV (multi-conta via `blackbr_accounts.json` 0600 gitignored).
   renderizar, tenta tile `button:has-text('{username}')` (estilo v3.94);
   submit `#kt_sign_in_submit` → `button[type=submit]` → Enter; sucesso =
   token no localStorage. Falha dumpa DOM em `explore/out/login_dom.html`.
-- `_session_still_valid` PASSIVA (sem fetch a endpoint não garantido):
+- `_session_still_valid` passiva + cheque ATIVO `GET /api/auth/me` (G3):
   URL de login, senha renderizada ou 401 do host ⇒ sessão morta.
 - Multi-conta: `blackbr_accounts.json` + `.blackbr_last_good` +
   `BLACKBR_ACCOUNT` env (ordem: env > ponteiro > primeira do arquivo).
-- Env própria: `BLACKBR_USERNAME`/`BLACKBR_PASSWORD` (vendor diferente);
+- Env compartilhada: `SIGMA_USERNAME`/`SIGMA_PASSWORD` (vendor diferente);
   proxy `SIGMA_PROXY` compartilhada (intencional — path da máquina);
   gate destrutivo `SIGMA_ALLOW_DESTRUCTIVE` único entre sites.
 
@@ -52,13 +52,6 @@ modo máximo, CRUD proibido sem aprovação.
 - Schema customers (igual sigma): `{id ~10 chars (pKDNA4ANLX), user_id,
   server_id, package_id, app_server_id, app_package_id, reseller,
   created_at, deleted_at (soft), ...}`; auth/me tem `parent_user_id`
-
-## Fase 2 (pendente aprovação do mapa)
-
-Port do api.py/scraper.py quase direto do woodcine (mesma API), kinds
-`blackbr.*` na mesma `panel_entities`; CLI `blackbr-*` + MCP. CRUD por
-último e SEM criar entidade real (créditos pagos) — validação só por
-probes não-mutantes + tripwire.
 
 ## Fase 2 — CRUD portado + ciclo real zz_test ✔ (créditos ilimitados, aprovado pelo dono)
 
