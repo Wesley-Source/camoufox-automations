@@ -40,9 +40,19 @@ Menu confirma painel de REVENDAS com CRÉDITOS: "Comprar Créditos",
 - Monitor do explorador em modo `host` (config do site) — sem suposição
   de prefixo de API.
 
-## Fase 2 (aguardando aprovação do mapa)
+## Fase 2 — CRUD portado + probes não-mutantes ✔
 
-Portar api (~70 linhas, subclasse de `PanelApiClient`) + scraper (~59,
-kinds `newmais.*`) + CLI/MCP + automations + paridade ×4 em CI. CRUD com
-gates (`SIGMA_ALLOW_DESTRUCTIVE` + `--yes`/`confirmar`) e validação SOMENTE
-por probes não-mutantes — créditos limitados.
+Portado do woodcine (template família Sigma) sobre as bases compartilhadas:
+`api.py` = subclasse de `PanelApiClient` (~70 linhas, sem strip — se update
+um dia 422, aplicar fix como no blackbr); `scraper.py` kinds `newmais.*`;
+CLI `newmais-*` + 12 tools MCP; paridade ×4 em CI.
+
+**Gates destrutivos**: `SIGMA_ALLOW_DESTRUCTIVE=1` + `--yes` (CLI) /
+`confirmar=True` (MCP). Saídas projetam `project_customer`/`project_response`.
+
+**Validação sem mutação** (créditos LIMITADOS — regra 2 máxima, NUNCA
+entidade real; diferença do blackbr, que tinha créditos ilimitados):
+- probe 422: POST /customers payload inválido (`username: '!!!'`) → Laravel
+  nomeou os campos, criou NADA
+- probe 404: PUT/DELETE /customers/zz_probe_fake → 404
+- tripwire: meta.total=195 antes/meio/depois — idêntico, painel intocado ✔
