@@ -94,3 +94,10 @@ só no 07; fluxos rápidos usam `meta.total` + página 1.
 **Campos**: `expira`/`expiry_date` veio `None` no row pós-edit — renovação por
 `note` aplicada confirmada; mapear campo de expiração real do blackbr antes de
 depender de `expiry_date` (provável `due_date`/outro nome).
+
+## Rotina diária recomendada (sync barato)
+
+Operação diária = `main.py blackbr-sync --what expiring` (1 request, ~2s —
+76 registros no mapa). Sync completo (`--what all` ou `--pages` alto) só no
+boot ou semanal: transporte browser custa ~2,2-2,5s/página (10.300 clientes
+= 103 páginas ≈ 4-5 min).
