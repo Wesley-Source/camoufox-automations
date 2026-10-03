@@ -154,6 +154,62 @@ class _BrowserResponse:
         return _json.loads(self.text)
 
 
+class _HttpTransport:
+    """HTTP direto via curl_cffi (impersonate=chrome) — sync dezenas de vezes
+    mais rápido que o browser. Mesma interface do _BrowserTransport; cookies e
+    token vêm do session json existente (painéis Bearer-only como newmais têm
+    cookies=[] e funcionam só com Bearer). Se o Cloudflare barrar (403 /
+    challenge), o caller cai no fallback browser (open_client_for mode 'auto'
+    = self-healing)."""
+
+    def __init__(self, token: str, cookies: list, extra_headers: dict = None):
+        self._token = token
+        self._cookiejar = {
+            c["name"]: c["value"]
+            for c in (cookies or [])
+            if c.get("name") and c.get("value")
+        }
+        self._extra = dict(extra_headers or {})
+        self._doh = {}  # host -> (ip, ts) — cache DoH TTL 5min
+
+    def _headers(self, headers: dict | None) -> dict:
+        return {**self._extra, **(headers or {})}
+
+    def _call(self, method, url, params=None, json=None, headers=None, timeout=None):
+        from urllib.parse import urlparse
+
+        from curl_cffi import requests as cffi
+        from curl_cffi.const import CurlOpt
+
+        # DNS local não resolve os hosts dos painéis (ISP) — resolve via DoH
+        # (mesmo esquema do browser: dns.google) e fixa o IP no RESOLVE do
+        # curl. Cache TTL 5min; se o DoH falhar, tenta o DNS normal.
+        host = urlparse(url).hostname or ""
+        opts = {}
+        if host:
+            ip, ts = self._doh.get(host, (None, 0.0))
+            if not ip or time.time() - ts > 300:
+                ip = doh_resolve(host)
+                self._doh[host] = (ip, time.time())
+            if ip:
+                opts = {CurlOpt.RESOLVE: [f"{host}:443:{ip}", f"{host}:80:{ip}"]}
+
+        t = timeout / 1000 if (timeout or 0) > 1000 else (timeout or 30)
+        r = cffi.request(
+            method, url, params=params, json=json,
+            headers=self._headers(headers), cookies=self._cookiejar,
+            impersonate="chrome", timeout=t,
+            curl_options=opts or None,
+        )
+        return _BrowserResponse(r.status_code, r.text)
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        return self._call("GET", url, params=params, headers=headers, timeout=timeout)
+
+    def request(self, method, url, json=None, headers=None, timeout=None):
+        return self._call(method, url, json=json, headers=headers, timeout=timeout)
+
+
 class PanelApiError(RuntimeError):
     def __init__(self, path: str, status: int, body: str, vendor: str = "Panel"):
         self.status = status
@@ -177,6 +233,9 @@ class PanelApiClient:
     API_ERROR = PanelApiError
     DEFAULT_SESSION_FILE = ""
     UPDATE_STRIP_FIELDS = False
+    # transporte HTTP direto (curl_cffi) no mode 'auto' — ligar por painel
+    # SOMENTE após validar sync HTTP vs browser (contagens idênticas).
+    FAST_SYNC = False
     _AUTH = None  # módulo auth do site (load_session/ensure_logged_page/default_proxy)
 
     def __init__(self, token: str = None, session_path: str = None,
@@ -492,7 +551,8 @@ def set_expiry_on_payload(row: dict, payload: dict, ymd: str):
 
 
 @contextmanager
-def open_client_for(cls, session_path: str = None, proxy: str = None, guard=None):
+def open_client_for(cls, session_path: str = None, proxy: str = None, guard=None,
+                    transport: str = None):
     """
     Cliente com transporte do browser (o único que o Cloudflare aceita).
 
@@ -505,6 +565,33 @@ def open_client_for(cls, session_path: str = None, proxy: str = None, guard=None
     o caminho estável depois do primeiro login.
     """
     auth = cls._AUTH
+    mode = transport or ("auto" if cls.FAST_SYNC else "browser")
+
+    def http_client(sess):
+        return cls(token=sess["token"],
+                   session_path=session_path or cls.DEFAULT_SESSION_FILE,
+                   transport=_HttpTransport(sess["token"], sess.get("cookies") or [],
+                                            extra_headers=_AXIOS_HEADERS))
+
+    if mode == "http":
+        sess = auth.load_session(session_path or cls.DEFAULT_SESSION_FILE)
+        if not sess:
+            raise RuntimeError(
+                f"Sem sessão válida — rode main.py {cls.VENDOR}-login --save primeiro.")
+        yield http_client(sess)
+        return
+
+    if mode == "auto":
+        # self-healing: sessão salva + probe barato; CF barrando → browser
+        try:
+            sess = auth.load_session(session_path or cls.DEFAULT_SESSION_FILE)
+            if sess:
+                probe = http_client(sess)
+                if probe._get("/auth/me").status_code == 200:
+                    yield probe
+                    return
+        except Exception:
+            pass  # cf_clearance expirou/rede — cai no browser abaixo
     with auth.ensure_logged_page(session_path=session_path,
                                  proxy=proxy or auth.default_proxy(), guard=guard) as s:
         transport = _BrowserTransport(s.page, extra_headers=_AXIOS_HEADERS)

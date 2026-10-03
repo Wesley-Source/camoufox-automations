@@ -49,6 +49,8 @@ class WoodcineApiClient(PanelApiClient):
     Produção: use `open_client()`, que injeta o transporte do browser.
     """
 
+    FAST_SYNC = True  # validado ×4: sync HTTP vs browser, contagens idênticas (03/10/2026)
+
     API_BASE = WOODCINE_API
     HOST = WOODCINE_HOST
     VENDOR = "woodcine"
@@ -58,7 +60,7 @@ class WoodcineApiClient(PanelApiClient):
 
 
 @contextmanager
-def open_client(session_path: str = WOODCINE_SESSION_FILE, proxy: str = None, guard=None):
+def open_client(session_path: str = WOODCINE_SESSION_FILE, proxy: str = None, guard=None, transport: str = None):
     """
     Cliente com transporte do browser (o único que o Cloudflare aceita).
 
@@ -66,5 +68,5 @@ def open_client(session_path: str = WOODCINE_SESSION_FILE, proxy: str = None, gu
     login) e devolve o client. session_path: default WOODCINE_SESSION_FILE,
     ancorado em __file__ (A1: default relativo quebrava cron/CWD≠raiz).
     """
-    with open_client_for(WoodcineApiClient, session_path, proxy, guard) as c:
+    with open_client_for(WoodcineApiClient, session_path, proxy, guard, transport) as c:
         yield c
