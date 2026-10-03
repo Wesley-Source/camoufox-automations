@@ -63,3 +63,7 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    superfície pública divergir.
 6. **NÃO fazer**: múltiplos browsers/logins simultâneos (red flag CF), raspar
    DOM quando existe API JSON, repetir requests sem rate limit.
+7. **Sync rápido**: os clients usam transporte HTTP direto (curl_cffi) com
+   fallback automático pro browser (`FAST_SYNC` validado ×4 em 03/10/2026).
+   Rotina diária: `--what expiring` (1 request ~2s); sync completo só no boot
+   ou semanal. Exploradores continuam SEMPRE browser + guard.
