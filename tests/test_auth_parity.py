@@ -102,3 +102,39 @@ def test_superficie_api_paritaria(name, mod_name, prefix, session_attr):
 
     err = client_cls.API_ERROR("/x", 500, "boom")
     assert "boom" in str(err) and name in str(err).lower()
+
+
+# ---- Paridade dos scrapers (Fase 3: core/panel_scraper.py é a base) ---------
+
+SCRAPER_SITES = (
+    ("sigma", "core.sigma.scraper", "SIGMA_API", ""),
+    ("woodcine", "core.woodcine.scraper", "WOODCINE_API", "woodcine."),
+    ("blackbr", "core.blackbr.scraper", "BLACKBR_API", "blackbr."),
+)
+
+SCRAPER_COMMON = (
+    "CHARTS", "SYNCERS", "entities_summary", "init_db", "save_entities",
+    "save_raw", "count_entities", "sync_all", "sync_customers", "sync_dashboard",
+    "sync_expiring", "sync_resellers", "sync_servers_packages", "sync_statistics",
+    "_CFG",
+)
+
+SYNCER_NAMES = {"customers", "expiring", "dashboard", "resellers",
+                "statistics", "servers_packages"}
+
+
+@pytest.mark.parametrize("name,mod_path,api_attr,kinds_prefix", SCRAPER_SITES)
+def test_superficie_scraper_paritaria(name, mod_path, api_attr, kinds_prefix):
+    """A superfície pública dos 3 scrapers tem que ser idêntica — drift vira
+    erro de CI (AGENTS.md G5: correção vai no BASE, core/panel_scraper.py)."""
+    import importlib
+
+    mod = importlib.import_module(mod_path)
+    for attr in SCRAPER_COMMON:
+        assert hasattr(mod, attr), f"{mod_path} sem {attr}"
+    assert set(mod.SYNCERS) == SYNCER_NAMES
+    cfg = mod._CFG
+    assert cfg.name == name and cfg.module is mod
+    assert cfg.kinds_prefix == kinds_prefix
+    assert cfg.api == getattr(mod, api_attr)
+    assert mod.CHARTS == mod._base.CHARTS
