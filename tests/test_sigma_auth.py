@@ -8,10 +8,14 @@ def test_load_session(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text("not json", encoding="utf-8")
     assert load_session(str(bad)) is None
-    # incompleto (falta cookies)
+    # incompleto (falta token)
     partial = tmp_path / "partial.json"
-    partial.write_text('{"token": "x"}', encoding="utf-8")
+    partial.write_text('{"cookies": [1]}', encoding="utf-8")
     assert load_session(str(partial)) is None
+    # Bearer-only (cookies vazios é válido — ex.: newmais)
+    nocookie = tmp_path / "nocookie.json"
+    nocookie.write_text('{"token": "t", "cookies": []}', encoding="utf-8")
+    assert load_session(str(nocookie)) == {"token": "t", "cookies": []}
     # válida
     good = tmp_path / "good.json"
     good.write_text('{"token": "t", "cookies": [1]}', encoding="utf-8")

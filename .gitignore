@@ -42,3 +42,8 @@ blackbr_session.json
 blackbr_session.lock
 .blackbr_last_good
 .blackbr_session_*.json
+newmais_accounts.json
+newmais_session.json
+newmais_session.lock
+.newmais_last_good
+.newmais_session_*.json

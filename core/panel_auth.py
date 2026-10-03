@@ -107,7 +107,8 @@ def load_session(cfg, path: str = None) -> dict | None:
         s = json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return None
-    return s if s.get("token") and s.get("cookies") else None
+    # Bearer-only panels (ex.: newmais) não setam cookies — token é a credencial.
+    return s if s.get("token") else None
 
 
 def save_session(cfg, sess: dict, path: str = None, username: str = None) -> None:
