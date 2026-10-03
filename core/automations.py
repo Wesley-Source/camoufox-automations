@@ -71,10 +71,10 @@ AUTOMATIONS = [
     {"id": "sigma.explore.lifecycle", "site": "sigma", "kind": "explore", "status": "ok",
      "what": "Ciclo de vida completo de um cliente zz_test_explorer_* (guardião de URL)",
      "run": "venv/bin/python core/sigma/explore/07_test_client_lifecycle.py"},
-    # ---- sigma: mapeado, ainda sem fiação -------------------------------------
     {"id": "sigma.servers_packages.sync", "site": "sigma", "kind": "sync", "status": "ok",
      "what": "Catálogo de servers (5) e packages (128) — valida par p/ create",
      "run": "main.py sigma-servers-packages"},
+    # ---- sigma: mapeado, ainda sem fiação -------------------------------------
     {"id": "sigma.notices.sync", "site": "sigma", "kind": "sync", "status": "planned",
      "what": "Avisos/notificações do painel",
      "run": "endpoint GET /api/notices/list"},
