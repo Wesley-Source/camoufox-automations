@@ -57,7 +57,7 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    que o form não existe.
 5. **PARIDADE entre auth.py's**: correção num painel replica nos outros NA
    MESMA rodada (os 3 são gêmeos). As bases compartilhadas são `core/panel_auth.py`, `core/panel_api.py` e
-   `core/panel_scraper.py` — correção vai no BASE, não nas cópias; `core/<site>/auth.py` é só
+   `core/panel_scraper.py` — correção vai no BASE, não nas cópias; `core/<site>/{auth,api,scraper}.py` é só
    config + `_login_flow` + wrappers. Painel novo = copiar o auth.py mais
    completo e conferir item a item. `tests/test_auth_parity.py` falha se a
    superfície pública divergir.
