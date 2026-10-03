@@ -13,33 +13,52 @@ uma pasta por site automatizado.
 
 ## Regras de Ouro para IA
 
-Este projeto manipula um **painel de produção com clientes reais** (Sigma
-IPTV). A segurança não é sugerida — é arquitetural:
+Este projeto manipula **4 painéis de produção com clientes reais** — família
+Sigma: lideriptv.sigma.st, woodcine.sigma.st, painelblackbr.com,
+newmais.sigma.vin. A segurança não é sugerida — é arquitetural:
 
 1. **Read-only é o padrão.** Escrita só por método nomeado e explícito
    (`create_customer`, `update_customer`...). Não existe método genérico de
    POST/PUT/DELETE na API client — e não crie um.
-2. **Guard antes de explorar.** Todo script exploratório instala
-   `explore/_guard.py` (aborta POST/PUT/PATCH/DELETE no nível do browser).
+2. **Guard antes de explorar.** Todo script exploratório instala o guard
+   central (`core/guard.py`, via `explore/_guard.py` — wrapper por site) que
+   aborta POST/PUT/PATCH/DELETE no nível do browser.
    Mutações intencionais usam o guardião de URL do `07` (allowlist de ID).
 3. **Snapshot antes e depois de qualquer escrita.**
    `06_customers_snapshot.py` + diff. Zero divergências além do cliente teste
    é a definição de sucesso.
-4. **Só clientes de teste.** Nomes `zz_test_*` inconfundíveis, criados e
-   **excluídos** no mesmo run. Nunca mutar cliente real — nem "só um pouquinho".
-5. **Destructive pede flag.** `sigma-customer-delete` exige `--yes`; MCP
-   `excluir_cliente_sigma` exige `confirmar=True`. Não contorne.
+4. **NUNCA criar/renovar/deletar entidade real sem aprovação EXPLÍCITA do
+   dono** — nada de "cliente de teste" por conta própria. Créditos de alguns
+   painéis são LIMITADOS/PAGOS (ver tabela abaixo). O único ciclo de teste
+   real já aprovado foi no blackbr (créditos ilimitados), sob supervisão.
+5. **Destructive pede flag dobrada.** `<site>-customer-delete` exige `--yes`
+   no CLI; MCP exige `confirmar=True`. Ambos exigem `SIGMA_ALLOW_DESTRUCTIVE=1`
+   no ambiente. Não contorne.
 6. **Endpoints em blocklist permanente** (não usar sem aprovação explícita do
    dono): `mass-delete`, `move`, `migration`, BotBot/mensagens, rotas de
    financeiro. O inventário os marca como `blocked`.
 7. **PII nunca sai do `out/`.** Snapshots, capturas e sessões ficam em
-   diretórios gitignored. Nunca commite token, cookie ou dado de cliente.
+   diretórios gitignored. Nunca commite token, cookie, senha ou dado de
+   cliente.
+
+### Os 4 painéis
+
+| Site | Painel | Créditos | Monitor | Kinds no banco |
+|---|---|---|---|---|
+| `sigma` | lideriptv.sigma.st | limitados¹ | `/api` | `customer` (legado, sem prefixo) |
+| `woodcine` | woodcine.sigma.st | **LIMITADOS** | `/api` | `woodcine.*` |
+| `blackbr` | painelblackbr.com | ilimitados | `host` | `blackbr.*` |
+| `newmais` | newmais.sigma.vin | **LIMITADOS** | `/api` | `newmais.*` |
+
+¹ Validação de CRUD **somente por probes não-mutantes** (422 payload inválido,
+404 ID inexistente, tripwire de contagem) nos painéis de créditos limitados —
+nunca criar entidade real. Regra detalhada: `AGENTS.md` (Painel safety rules).
 
 ### Fatos técnicos que vão te poupar horas (já descobertos à moda antiga)
 
 | Fato | Detalhe |
 |---|---|
-| Transporte | Cloudflare bloqueia `requests` (fingerprint TLS) e o `context.request` do Playwright (DNS morre no Node). **Único caminho: `fetch` dentro da página** via `page.evaluate` — usa o DoH do browser + TLS real do Firefox. `open_client()` entrega isso pronto. |
+| Transporte | **FAST_SYNC ativo ×4** (validado 03/10/2026): syncs usam HTTP direto via `curl_cffi` (impersonate Chrome + cookies/token da sessão + DoH) — 3-5x mais rápido que browser, com fallback automático pro browser em 403/challenge (que refresha `cf_clearance`). Detalhe: Cloudflare bloqueia `requests` puro (fingerprint TLS); dentro do browser, `fetch` via `page.evaluate` usa o DoH + TLS real do Firefox. |
 | DNS | A máquina não resolve `*.sigma.st` (só via DoH). O browser já nasce com Google DoH (`core/browser.py`); o motor `requests` tem adapter DoH embutido (só serve p/ testes). |
 | Headers de mutação | Sem `Accept: application/json` + `X-Requested-With: XMLHttpRequest` o Laravel responde validação com **302→HTML status 200** (parece sucesso, não fez nada). Já estão no `_AXIOS_HEADERS`. |
 | Paginação | O param `per_page` (snake_case) é **silenciosamente ignorado**; use `perPage` (camelCase), cap 100. |
@@ -60,34 +79,52 @@ core/
   automations.py        # INVENTÁRIO — fonte única (CLI/MCP/README leem daqui)
   browser.py            # Camoufox headless virtual + Google DoH hardcoded
   database.py           # SQLite: raw_snapshots, products, panel_entities (UPSERT)
-  sigma/                # SITE: painel Sigma IPTV (lideriptv.sigma.st)
-    auth.py             #   login, sessão, reuso/validade de token
-    api.py              #   SigmaApiClient (GET whitelist + 4 mutações nomeadas)
-    scraper.py          #   sync_* (ELT: fetch → raw → panel_entities)
+  guard.py              # GUARD CENTRAL — kill switch de mutação (wrapper por site: core/<site>/explore/_guard.py)
+  panel_auth.py         # BASE compartilhada: sessão multi-conta, ensure_logged_page, monitor
+  panel_api.py          # BASE compartilhada: PanelApiClient (GET whitelist + mutações nomeadas) + _HttpTransport (curl_cffi, FAST_SYNC) + _BrowserTransport
+  panel_scraper.py      # BASE compartilhada: sync_* genérico (kinds prefixados por site)
+  sigma/                # SITE: lideriptv.sigma.st (estrutura idêntica nos 4)
+    auth.py             #   config + _login_flow + wrappers (paridade testada em CI)
+    api.py              #   <Site>ApiClient (subclasse de PanelApiClient)
+    scraper.py          #   sync_* (ELT: fetch → raw → panel_entities, kinds prefixados)
     explore/            #   scripts de descoberta (dev, mantêm o mapa vivo)
-      _guard.py         #     kill switch de rede (aborta mutação)
+      _guard.py         #     wrapper do guard central
       01..07_*.py       #     sessão, mapa, crawl, probe, crudmap, snapshot, lifecycle
       PANEL_MAP.md      #     MAPA CANÔNICO do painel (endpoints, schema, descobertas)
       out/              #     capturas (GITIGNORED — PII)
+  woodcine/             # SITE: woodcine.sigma.st (idêntico ao sigma/)
+  blackbr/              # SITE: painelblackbr.com (idêntico ao sigma/)
+  newmais/              # SITE: newmais.sigma.vin (idêntico ao sigma/)
   ecommerce_x/          # SITE: placeholder httpbin (padrão para o próximo site)
     scraper.py
     explore/
 interfaces/
-  cli/                  # Typer: __init__ (hub+automations), sigma.py, ecommerce.py
-  mcp/                  # FastMCP: server.py (hub), sigma.py, ecommerce.py
-tests/                  # pytest (20 testes; sem deps novas — fakes na mão)
+  cli/                  # Typer: __init__ (hub+automations) + um módulo por site
+  mcp/                  # FastMCP: server.py (hub) + um módulo por site (50 tools)
+tests/                  # pytest (151 testes; paridade ×4 em CI — drift entre sites quebra o build)
 main.py                 # `main.py` = CLI | `main.py mcp` = servidor MCP
 ```
+
+### Arquivos por site (padrão `<site>_*`, todos gitignored na raiz)
+
+- `<site>_session.json` — sessão primária (token + cookies)
+- `.<site>_session_<usuario>.json` — sessão por conta extra (multi-conta)
+- `<site>_accounts.json` — credenciais (0600; mesma ordem = prioridade)
+- `.<site>_last_good` — ponteiro da conta ativa
+
+Sessão válida = `GET /api/auth/me` 200. newmais é Bearer-only (cookies
+vazios são válidos). `monitor_scope` do explorador: `/api` (padrão) ou
+`host` (blackbr — vendor desconhecido na época).
 
 ## Setup
 
 ```bash
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
 venv/bin/camoufox fetch                  # baixa o browser (~1x)
-pytest tests/                            # deve passar 92/92
-# credenciais (env OU sigma_accounts.json — ver seção Multi-conta):
-export SIGMA_USERNAME=... SIGMA_PASSWORD=...
-venv/bin/python main.py sigma-login --save   # gera sigma_session.json (gitignored)
+pytest tests/                            # deve passar 151/151
+# credenciais por painel: <site>_accounts.json (ou env SIGMA_USERNAME/SIGMA_PASSWORD):
+venv/bin/python main.py newmais-account add Techcarlos2   # exemplo (senha oculta, 0600)
+venv/bin/python main.py newmais-login --save               # gera newmais_session.json (gitignored)
 ```
 
 ## Multi-conta (várias credenciais para o mesmo painel)
@@ -139,13 +176,15 @@ contas, tudo funciona como antes (env creds → modo legado).
 1. **Descobrir o que existe** → `main.py automations` (ou tool MCP
    `listar_automacoes`). Status `ok` = pode usar direto; `planned` = endpoint
    mapeado, falta fiação; `blocked` = precisa de aprovação humana explícita.
-2. **Ler o mapa antes de tocar** → `core/sigma/explore/PANEL_MAP.md` tem
-   endpoints, schemas e pegadinhas por seção do painel.
-3. **Sincronizar dados** → `sigma-sync --what all --pages 5` (banco local
-   sempre; UPSERT idempotente, pode rodar quantas vezes quiser).
-4. **Criar/editar/excluir cliente** → comandos `sigma-customer-*` / tools MCP.
-   Antes: snapshot (06). Depois: snapshot + diff = zero. Cliente de teste só
-   com nome `zz_test_*`, excluído no mesmo run.
+2. **Ler o mapa antes de tocar** → `core/<site>/explore/PANEL_MAP.md` tem
+   endpoints, schemas e pegadinhas por seção do painel (4 mapas, um por site).
+3. **Sincronizar dados** → `<site>-sync --what all` (banco local sempre;
+   UPSERT idempotente; FAST_SYNC torna isso barato — rotina diária:
+   `--what expiring`).
+4. **Criar/editar/excluir cliente** → comandos `<site>-customer-*` / tools MCP.
+   ⚠️ Só com aprovação EXPLícita do dono (painéis de créditos limitados:
+   NUNCA; validação só por probes não-mutantes). Antes: snapshot (06).
+   Depois: snapshot + diff = zero.
 5. **Explorar área nova do painel** → seguir o padrão dos exploradores:
    guard ligado, blocklist de seções sensíveis, `--max` pequeno, um commit por
    script, achados documentados no PANEL_MAP.md.
@@ -160,32 +199,32 @@ Fonte viva: `core/automations.py` (este espelho pode envelhecer; o comando
 
 | Status | Qtd | Exemplos |
 |---|---|---|
-| `ok` | 21 | login (multi-conta), sync (customers/expiring/dashboard/resellers/statistics/servers+packages/all), status, CRUD de cliente (create/update/delete/resync), 7 exploradores, demo ecommerce |
-| `planned` | 5 | notices, top10, ai-analysis, export CSV, restore |
-| `blocked` | 3 | BotBot/mensagens, bulk (mass-delete/move/migration), financeiro |
+| `ok` | 60+ | login/sync/status/CRUD por painel (×4), 7+ exploradores por site, demo ecommerce |
+| `planned` | ~8 | notices, top10, ai-analysis, export CSV, restore, sync agendado |
+| `blocked` | 3+ | BotBot/mensagens, bulk (mass-delete/move/migration), financeiro |
 
 ## Interfaces
 
-**CLI** (`venv/bin/python main.py <comando>`): `automations`, `sigma-login
-[--user NOME]`, `sigma-account list|use|add|remove`, `sigma-sync`,
-`sigma-status`, `sigma-servers-packages`,
-`sigma-customer-create|update|delete|resync`, `sync-item`. MCP (`main.py mcp`):
-`listar_automacoes`, `login_sigma`, `sincronizar_sigma`, `status_sigma`,
-`criar_cliente_sigma`, `editar_cliente_sigma`, `excluir_cliente_sigma`,
-`resync_cliente_sigma`, `listar_pacotes_sigma`, `buscar_cliente_sigma`,
-`listar_clientes_sigma`, `listar_contas_sigma`, `trocar_conta_sigma`,
-`consultar_e_sincronizar_produto`.
+**CLI** (`venv/bin/python main.py <comando>`): um módulo por site registra
+comandos `<site>-login`, `<site>-account list|use|add|remove`, `<site>-sync`,
+`<site>-status`, `<site>-servers-packages`, `<site>-customer-create|update|delete|resync`
+(sigma, woodcine, blackbr, newmais) + `automations`, `sync-item`.
+MCP (`main.py mcp`): **50 tools** — 12-14 por painel (login, sincronizar,
+status, contas ×2, pacotes, buscar/listar clientes + CRUD ×4 com gates) +
+`listar_automacoes` + ecommerce. A fonte viva é `main.py automations`.
 
 ### Paridade CLI ↔ MCP
 
 | Ação | CLI | MCP |
 |---|---|---|
-| Sincronizar | `sigma-sync --what` | `sincronizar_sigma(o_que)` |
-| Criar cliente | `sigma-customer-create` | `criar_cliente_sigma` |
-| Editar cliente | `sigma-customer-update` | `editar_cliente_sigma` |
-| Excluir | `sigma-customer-delete --yes` | `excluir_cliente_sigma(confirmar=True)` |
-| Resync | `sigma-customer-resync` | `resync_cliente_sigma` |
-| Catálogo servers/packages | `sigma-servers-packages` | `listar_pacotes_sigma` |
+| Sincronizar | `<site>-sync --what` | `sincronizar_<site>(o_que)` |
+| Criar cliente | `<site>-customer-create` | `criar_cliente_<site>` |
+| Editar cliente | `<site>-customer-update` | `editar_cliente_<site>` |
+| Excluir | `<site>-customer-delete --yes` | `excluir_cliente_<site>(confirmar=True)` |
+| Resync | `<site>-customer-resync` | `resync_cliente_<site>` |
+| Catálogo servers/packages | `<site>-servers-packages` | `listar_pacotes_<site>` |
+
+(site = sigma, woodcine, blackbr ou newmais — mesma forma em todos os 4.)
 
 Ambos exigem `SIGMA_ALLOW_DESTRUCTIVE=1` para exclusão. Senha mascarada por
 padrão nas duas interfaces. Docstrings MCP seguem o formato
@@ -219,16 +258,15 @@ credenciais (só o relogin precisa do par user/password).
 
 ## Conhecimento vivo (ordem de leitura para uma IA nova)
 
-1. `AGENTS.md` — hooks do grafo de conhecimento (graphify)
-2. `core/automations.py` — o que existe pra fazer
-3. `core/sigma/explore/PANEL_MAP.md` — como o painel funciona por dentro
+1. `AGENTS.md` — regras de segurança + hooks do grafo de conhecimento (graphify)
+2. `core/automations.py` — o que existe pra fazer (fonte viva)
+3. `core/<site>/explore/PANEL_MAP.md` — como cada painel funciona por dentro (4 mapas)
 4. `graphify-out/` — grafo do código (`graphify query "..."`)
 5. Este README — as regras do jogo
 
 ## Deploy (planejado)
 
-VPS + cron para `sigma-sync --what all` diário + alerta de clientes a vencer.
+VPS + cron para `<site>-sync --what expiring` diário (~2s/painel via
+FAST_SYNC) + sync completo semanal + alerta de clientes a vencer.
 No cron use `timeout --signal=TERM` (SIGKILL deixa Xvfb/Firefox órfãos;
 SIGTERM o Playwright trata e faz cleanup).
-(dados já no banco; notifier é o que falta). Segundo site real substitui o
-placeholder `ecommerce_x` clonando o padrão de pastas do sigma.

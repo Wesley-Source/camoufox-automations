@@ -10,7 +10,7 @@ Creds: `woodcine_accounts.json` (gitignored). Sessão: `woodcine_session.json`.
 - `Authorization: Bearer <token>`; Cloudflare `cf_clearance` (IP-bound — SIGMA_PROXY único)
 - Validação: `GET /api/auth/me` (200 = válida)
 - **Mutações exigem headers axios** `Accept: application/json` + `X-Requested-With: XMLHttpRequest` (sem eles: 302→HTML status 200 falso-sucesso)
-- Creds corretas: `Marcioadmelite` / `REDACTED` (`Il` = i+L, NÃO `ll` — 1 tentativa errada gasta contador de ban, ~9 = ban permanente)
+- Creds: login `Marcioadmelite` (senha em `woodcine_accounts.json`, 0600 — NUNCA em doc; `Il` = i+L, NÃO `ll` — 1 tentativa errada gasta contador de ban, ~9 = ban permanente)
 
 ## UI — 84 rotas mapeadas (vs 42 do lider)
 

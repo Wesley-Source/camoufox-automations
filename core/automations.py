@@ -162,7 +162,7 @@ AUTOMATIONS = [
      "run": "main.py newmais-status"},
     # ---- blackbr (painelblackbr.com, família Sigma; painel de revendas com créditos ILIMITADOS) ----
     {"id": "blackbr.login", "site": "blackbr", "kind": "auth", "status": "ok",
-     "what": "Login no painelblackbr: imprime o token (env BLACKBR_USERNAME/PASSWORD)",
+     "what": "Login no painelblackbr: imprime o token (env SIGMA_USERNAME/SIGMA_PASSWORD)",
      "run": "main.py blackbr-login --save"},
     {"id": "blackbr.sync.customers", "site": "blackbr", "kind": "sync", "status": "ok",
      "what": "Sincroniza clientes do blackbr (kinds blackbr.*)",
