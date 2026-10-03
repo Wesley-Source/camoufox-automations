@@ -59,17 +59,23 @@ def _login_flow(page, username: str, password: str, captured: list):
         # Tela nova pode não ter o id — Enter no campo de senha submete.
         page.press("input[name=password]", "Enter")
 
-    # Sucesso = token aparece no localStorage (o app salva após o POST).
-    try:
-        page.wait_for_function(
-            "() => !!localStorage.getItem('token')", timeout=60_000
+    # Sucesso = token no localStorage. O FOX v3.94 pode navegar destruindo o
+    # contexto JS e o monitor nem sempre captura o POST — o token no
+    # localStorage é a única fonte da verdade (nunca a resposta capturada).
+    deadline = time.time() + 90
+    token_ok = False
+    while time.time() < deadline:
+        try:
+            if page.evaluate("() => localStorage.getItem('token')"):
+                token_ok = True
+                break
+        except Exception:
+            pass  # contexto destruído por navegação — retry
+        time.sleep(2)
+    if not token_ok:
+        raise RuntimeError(
+            "Login woodcine falhou: token não apareceu no localStorage em 90s."
         )
-    except Exception:
-        login_resp = next(
-            (c for c in reversed(captured) if "/api/auth/login" in c["url"]), None
-        )
-        detail = login_resp["response_body"] if login_resp else "sem resposta capturada"
-        raise RuntimeError(f"Login Sigma falhou. Resposta: {detail}")
 
 
 # Wrappers `def` — superfície pública idêntica à de antes do refactor
