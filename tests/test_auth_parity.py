@@ -74,3 +74,31 @@ def test_superficie_publica_paritaria(modname):
     assert cfg.module is mod
     assert cfg.monitor_scope == spec["monitor_scope"]
     assert str(cfg.session_file).endswith(f"{cfg.name}_session.json")
+
+
+API_SITES = (
+    ("sigma", "core.sigma.api", "SIGMA", "SESSION_FILE"),
+    ("woodcine", "core.woodcine.api", "WOODCINE", "WOODCINE_SESSION_FILE"),
+    ("blackbr", "core.blackbr.api", "BLACKBR", "BLACKBR_SESSION_FILE"),
+)
+
+
+@pytest.mark.parametrize("name,mod_name,prefix,session_attr", API_SITES)
+def test_superficie_api_paritaria(name, mod_name, prefix, session_attr):
+    """Paridade da camada API (base: core/panel_api.py)."""
+    mod = importlib.import_module(mod_name)
+    url = getattr(mod, f"{prefix}_URL")
+    client_cls = getattr(mod, f"{prefix.capitalize()}ApiClient")
+
+    assert client_cls.API_BASE == f"{url}/api"
+    assert client_cls.HOST == url.replace("https://", "")
+    assert client_cls.VENDOR == name
+    assert client_cls.DEFAULT_SESSION_FILE == getattr(mod, session_attr)
+    assert client_cls.API_ERROR.__name__ == f"{prefix.capitalize()}ApiError"
+    # fix vendor blackbr: update não pode reenviar username/password (422 provado)
+    assert client_cls.UPDATE_STRIP_FIELDS is (name == "blackbr")
+    # late binding: _AUTH é o módulo do site (monkeypatch dos testes funciona)
+    assert client_cls._AUTH is mod
+
+    err = client_cls.API_ERROR("/x", 500, "boom")
+    assert "boom" in str(err) and name in str(err).lower()
