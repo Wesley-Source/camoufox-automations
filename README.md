@@ -103,12 +103,17 @@ core/
     scraper.py
     explore/
 interfaces/
-  cli/                  # Typer: __init__ (hub+automations) + um módulo por site
-  mcp/                  # FastMCP: server.py (hub) + um módulo por site (50 tools)
-                        #   + playlist.py (playlist_cliente — 51ª tool; mostra
+  cli/                  # Typer: __init__ (hub+automations) + _panel.py (ENGINE
+                        #   com os 10 comandos) + spec por site (~30 linhas)
+  mcp/                  # FastMCP: server.py (hub) + _panel.py (ENGINE com as
+                        #   12 tools por painel) + spec por site (~45 linhas;
+                        #   workers = partials do engine, patch via getattr)
+                        #   + playlist.py (playlist_cliente; mostra
                         #   login/senha IPTV do cliente EM CLARO por decisão do
                         #   dono — exceção da regra 5, ver AGENTS.md)
-tests/                  # pytest (151 testes; paridade ×4 em CI — drift entre sites quebra o build)
+tests/                  # pytest (163 testes; paridade ×4 em CI — drift entre
+                        #   sites quebra o build; superfície CLI/MCP gateada em
+                        #   test_cli_mcp_parity.py)
 main.py                 # `main.py` = CLI | `main.py mcp` = servidor MCP
 ```
 

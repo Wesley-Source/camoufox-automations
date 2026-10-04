@@ -43,7 +43,11 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
 7. **Site novo** = seguir o padrão `core/<site>/` (auth multi-conta com
    `<site>_accounts.json` 0600 gitignored, `explore/` com guard, `PANEL_MAP.md`,
    kinds prefixados `<site>.*` no banco). Explorar primeiro, mapear, SÓ DEPOIS
-   portar api/scraper/CLI/MCP — e CRUD por último.
+   portar api/scraper/CLI/MCP — e CRUD por último. CLI/MCP: `<site>.py` é SPEC
+   (~30/45 linhas) sobre os engines `interfaces/{cli,mcp}/_panel.py` — os
+   10 comandos/12 tools vivem no engine (leitura late-binding via getattr:
+   monkeypatch nos módulos dos sites continua valendo); superfície gateada
+   em `tests/test_cli_mcp_parity.py`.
 
 ## Operational guidelines (browser/CF) — post-mortem Hermes 02/10/2026
 
