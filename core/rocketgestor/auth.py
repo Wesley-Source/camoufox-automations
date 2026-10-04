@@ -18,7 +18,6 @@ import os
 import time
 from pathlib import Path
 
-from core.browser import BrowserEngine, is_cf_challenge
 from core.guard import install_guard
 
 ROCKET_URL = "https://app.rocketgestor.com"
@@ -150,6 +149,7 @@ def ensure_logged_page(session_path: str = None, proxy: str = None, guard=None):
                 '[{"username": "...", "password": "..."}] (0600)'
             )
         sess = load_session(session_path)
+        from core.browser import BrowserEngine  # lazy: import do modulo nao puxa camoufox/playwright
         with BrowserEngine.get_page(proxy=proxy) as page:
             s = Session(page, session_path or ROCKET_SESSION_FILE,
                         active["username"])
@@ -161,6 +161,7 @@ def ensure_logged_page(session_path: str = None, proxy: str = None, guard=None):
                 page.goto(ROCKET_URL + "/", wait_until="domcontentloaded",
                           timeout=60_000)
                 for _ in range(6):  # G4: CF = esperar, não falhar
+                    from core.browser import is_cf_challenge  # lazy
                     if not is_cf_challenge(page):
                         break
                     time.sleep(5)
@@ -178,6 +179,7 @@ def ensure_logged_page(session_path: str = None, proxy: str = None, guard=None):
                 page.goto(ROCKET_URL + LOGIN_PATH, wait_until="domcontentloaded",
                           timeout=60_000)
                 for _ in range(6):
+                    from core.browser import is_cf_challenge  # lazy
                     if not is_cf_challenge(page):
                         break
                     time.sleep(5)
@@ -207,3 +209,14 @@ def ensure_logged_page(session_path: str = None, proxy: str = None, guard=None):
 
 def default_proxy() -> str | None:
     return os.environ.get("SIGMA_PROXY")
+
+
+def __getattr__(name):
+    # PEP 562: expõe BrowserEngine/is_cf_challenge LAZY — o import do módulo
+    # não puxa camoufox/playwright (regra 9 do AGENTS.md); o contrato
+    # m.BrowserEngine (panel_auth._ensure_multi) e o monkeypatch dos testes
+    # continuam funcionando via setattr no módulo.
+    if name in ("BrowserEngine", "is_cf_challenge"):
+        from core import browser as _b
+        return getattr(_b, name)
+    raise AttributeError(name)

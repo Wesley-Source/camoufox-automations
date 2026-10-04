@@ -76,12 +76,14 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    documentação NA MESMA commit (README, PANEL_MAP do painel, AGENTS.md,
    docstrings CLI/MCP) — commit sem docs é commit incompleto. Vale para
    humanos e agentes.
-9. **Import lazy de `core.browser` nos auths** (padrão karpathy 03/10/2026,
-   commit 503fd57): `core/<site>/auth.py` NÃO importa `BrowserEngine`/
-   `is_cf_challenge` no topo do módulo — import dentro da função que usa.
-   Import no topo puxa camoufox+playwright (~0.5s) para testes/syncs offline;
-   importtime medido caiu 1.21s → 0.53s no ciclo de testes. Ao criar site
-   novo, seguir o padrão (ver blackbr/newmais auth.py).
+9. **Import lazy de `core.browser` nos auths** (padrão karpathy 03-04/10/2026,
+   commits 503fd57 + fase noturna): `core/<site>/auth.py` NÃO importa
+   `BrowserEngine`/`is_cf_challenge` no topo — o módulo exporta via **PEP 562
+   `__getattr__`** (lazy, e o contrato `m.BrowserEngine` do `panel_auth` e o
+   monkeypatch dos testes continuam funcionando); dentro das funções, import
+   local. Import no topo puxa camoufox+playwright (~0.5s) para testes/syncs
+   offline; importtime medido caiu 1.21s → 0.53s no ciclo de testes. Ao criar
+   site novo, seguir o padrão (ver blackbr/newmais auth.py).
 10. **Display do browser**: `HUB_DISPLAY` escolhe `virtual` (Xvfb, padrão
    Linux), `headless` (nativo — revalidar CF painel a painel) ou `x11`
    (DISPLAY externo). No Windows nativo só `headless`/`x11`; o recomendado

@@ -154,3 +154,14 @@ def logged_page(username: str, password: str, proxy: str = None, guard=None):
 
 def login(username: str, password: str, proxy: str = None) -> dict:
     return _base.login(_CFG, username, password, proxy)
+
+
+def __getattr__(name):
+    # PEP 562: expõe BrowserEngine/is_cf_challenge LAZY — o import do módulo
+    # não puxa camoufox/playwright (regra 9 do AGENTS.md); o contrato
+    # m.BrowserEngine (panel_auth._ensure_multi) e o monkeypatch dos testes
+    # continuam funcionando via setattr no módulo.
+    if name in ("BrowserEngine", "is_cf_challenge"):
+        from core import browser as _b
+        return getattr(_b, name)
+    raise AttributeError(name)

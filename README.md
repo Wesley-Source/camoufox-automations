@@ -128,11 +128,24 @@ vazios são válidos). `monitor_scope` do explorador: `/api` (padrão) ou
 ```bash
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
 venv/bin/camoufox fetch                  # baixa o browser (~1x)
-pytest tests/                            # deve passar 151/151
+pytest tests/                            # deve passar 159/159
 # credenciais por painel: <site>_accounts.json (ou env SIGMA_USERNAME/SIGMA_PASSWORD):
 venv/bin/python main.py newmais-account add Techcarlos2   # exemplo (senha oculta, 0600)
 venv/bin/python main.py newmais-login --save               # gera newmais_session.json (gitignored)
 ```
+
+## Performance
+
+- **Keep-alive TLS**: o transporte HTTP (`_HttpTransport`, `core/panel_api.py`)
+  reusa uma única `curl_cffi.Session` — handshake com o CF só na 1ª request.
+  Ciclo completo de validação (blackbr+lideriptv): 47.0s → 42.0s (04/10/2026).
+  Nunca passar `curl_options`/RESOLVE por request em cima da session (mata o
+  pool e piora ~50%).
+- **DoH com cache em disco**: `doh_resolve` cacheia em `/tmp/opencode`
+  (TTL 300s acerto / 30s falha) — CLIs e syncs não re-resolvem por processo.
+- **Import lazy de `core.browser`**: ver regra 9 do AGENTS.md — testes e
+  comandos offline não pagam camoufox+playwright (ciclo de testes
+  1.21s → 0.53s).
 
 ## Windows & displays
 
