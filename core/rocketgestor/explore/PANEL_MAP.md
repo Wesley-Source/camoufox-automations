@@ -46,8 +46,25 @@ Nenhum endpoint REST nos caminhos chutados (`/api/clients/` etc. → 404);
 `/api/` responde 200 em HTML. A API real do produto provavelmente exige
 API key (página `/gerenciador/api-keys/`) — verificar na Fase 2.
 
-## Fase 2 (aguardando aprovação do mapa)
+## Fase 2 — CRUD + CLI/MCP ✔
 
-Snapshot da tabela de clientes (URLs de detalhe/edição por id), API externa
-via api-keys (preferir a HTML), port api/scraper/CLI/MCP no padrão do hub
-(kinds `rocketgestor.*`), CRUD test-friendly (zz_test_* livres).
+Port no padrão do hub: auth Django standalone (cookies, sem bases sigma),
+api.py `RocketGestorClient` (requests + cookies do session json), CLI
+`rocketgestor-*`, 8 tools MCP `*_rocketgestor`, kinds `rocketgestor.client`
+(sync ~500 clientes). CRUD **test-friendly** validado ao vivo com ciclo
+zz_test_* (create→update→delete→lixeira) — créditos inexistentes; clientes
+REAIS intocados.
+
+- **Update**: POST `/gerenciador/cliente/editar?cliente_id={ID_NUMÉRICO}`
+  (rota montada por JS; form-editar NÃO tem teste_id) — REQUER
+  `forma_de_pagamento` (ID numérico; mapeamento texto→ID automático via
+  options da página). Vencimento em ISO (aaaa-mm-dd) na edição.
+- **Delete**: GET `/gerenciador/cliente/delete?cliente_id={uuid}` (o JS usa
+  o UUID da info_url, não o id numérico) — soft delete → lixeira. A view
+  responde 500 DEPOIS de deletar; `delete_client` confirma na lixeira.
+- **Create**: POST `/gerenciador/cliente/add` (csrf + campos);
+  `telefone_0` é SELECT de código ISO (`BR|Brasil +55` → 'BR'); plano/
+  forma_de_pagamento esperam IDs numéricos ('Mensal'=13638, 'Pix'=4017 —
+  mapeamento texto→ID automático no api.py).
+- Sessão = cookies (sessionid/csrftoken); GETs funcionam sem browser.
+

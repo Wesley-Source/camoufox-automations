@@ -5,6 +5,7 @@ from core.automations import AUTOMATIONS
 
 from interfaces.mcp.blackbr import register as reg_blackbr
 from interfaces.mcp.newmais import register as reg_newmais
+from interfaces.mcp.rocketgestor import register as reg_rocketgestor
 from interfaces.mcp.playlist import register as reg_playlist
 from interfaces.mcp.ecommerce import register as reg_ecommerce
 from interfaces.mcp.sigma import register as reg_sigma
@@ -17,6 +18,7 @@ mcp_app = FastMCP("AutomationHubMCP")
 # Um módulo por site; cada um registra suas tools no servidor.
 reg_blackbr(mcp_app)
 reg_newmais(mcp_app)
+reg_rocketgestor(mcp_app)
 reg_playlist(mcp_app)
 reg_ecommerce(mcp_app)
 reg_sigma(mcp_app)
