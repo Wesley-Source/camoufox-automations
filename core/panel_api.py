@@ -171,6 +171,8 @@ class _HttpTransport:
         }
         self._extra = dict(extra_headers or {})
         self._doh = {}  # host -> (ip, ts) — cache DoH TTL 5min
+        self._session = None  # cffi.Session lazy — pool keep-alive por host
+        self._resolve = []  # entradas CurlOpt.RESOLVE acumuladas na session
 
     def _headers(self, headers: dict | None) -> dict:
         return {**self._extra, **(headers or {})}
@@ -187,27 +189,32 @@ class _HttpTransport:
                 "(venv/bin/pip install curl_cffi) ou use transport='browser'.") from e
 
         # DNS local não resolve os hosts dos painéis (ISP) — resolve via DoH
-        # (mesmo esquema do browser: dns.google) e fixa o IP no RESOLVE do
-        # curl. Cache: acerto TTL 5min, falha TTL 30s (B1: outage não pode
-        # custar uma resolução de 10s por request). Sem DoH → DNS normal.
+        # (mesmo esquema do browser: dns.google) e fixa o IP no RESOLVE.
+        # RESOLVE vai no curl_options da SESSION (setado UMA vez por host,
+        # re-aplicado pela lib pós-reset) — curl_options POR REQUEST mata o
+        # pool de conexões (rodada 1: 47s → 72s).
         host = urlparse(url).hostname or ""
-        opts = {}
+        if self._session is None:
+            self._session = cffi.Session(
+                impersonate="chrome", cookies=self._cookiejar)
         if host:
             ip, ts = self._doh.get(host, (None, 0.0))
             ttl = 300 if ip else 30
             if not ip or time.time() - ts > ttl:
                 ip = doh_resolve(host)
                 self._doh[host] = (ip, time.time())
-            if ip:
-                opts = {CurlOpt.RESOLVE: [f"{host}:443:{ip}", f"{host}:80:{ip}"]}
+                if ip:
+                    self._resolve = [e for e in self._resolve
+                                     if e.split(":")[0] != host]
+                    self._resolve += [f"{host}:443:{ip}", f"{host}:80:{ip}"]
+                    self._session.curl_options = {
+                        CurlOpt.RESOLVE: list(self._resolve)}
 
         # B2: >=1000 é ms; abaixo é segundos já
         t = timeout / 1000 if (timeout or 0) >= 1000 else (timeout or 30)
-        r = cffi.request(
+        r = self._session.request(
             method, url, params=params, json=json,
-            headers=self._headers(headers), cookies=self._cookiejar,
-            impersonate="chrome", timeout=t,
-            curl_options=opts or None,
+            headers=self._headers(headers), timeout=t,
         )
         return _BrowserResponse(r.status_code, r.text)
 
