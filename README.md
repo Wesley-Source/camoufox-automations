@@ -136,6 +136,11 @@ venv/bin/python main.py newmais-login --save               # gera newmais_sessio
 
 ## Performance
 
+- **Busca server-side**: `search_customers` tenta `GET /customers?username=`
+  (filtro real, semântica contém, validado ao vivo 04/10/2026) antes de
+  paginar — buscar em 10k clientes e a verificação pós-delete viraram 1
+  request. Guard + validação de rows → fallback paginado se o filtro não for
+  honrado. Ciclo completo: 43.3s → 29.2s (−33%).
 - **Keep-alive TLS**: o transporte HTTP (`_HttpTransport`, `core/panel_api.py`)
   reusa uma única `curl_cffi.Session` — handshake com o CF só na 1ª request.
   Ciclo completo de validação (blackbr+lideriptv): 47.0s → 42.0s (04/10/2026).
