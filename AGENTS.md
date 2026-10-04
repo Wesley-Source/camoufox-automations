@@ -71,3 +71,8 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    documentação NA MESMA commit (README, PANEL_MAP do painel, AGENTS.md,
    docstrings CLI/MCP) — commit sem docs é commit incompleto. Vale para
    humanos e agentes.
+9. **Display do browser**: `HUB_DISPLAY` escolhe `virtual` (Xvfb, padrão
+   Linux), `headless` (nativo — revalidar CF painel a painel) ou `x11`
+   (DISPLAY externo). No Windows nativo só `headless`/`x11`; o recomendado
+   é WSL2 (README 'Windows & displays'). Sem browser, FAST_SYNC e busca
+   local seguem funcionando.

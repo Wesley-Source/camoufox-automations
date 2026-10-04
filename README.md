@@ -127,6 +127,60 @@ venv/bin/python main.py newmais-account add Techcarlos2   # exemplo (senha ocult
 venv/bin/python main.py newmais-login --save               # gera newmais_session.json (gitignored)
 ```
 
+## Windows & displays
+
+O browser de evasão (Camoufox) usa **Xvfb (display virtual)**, que só existe
+no Linux. No Windows você tem 3 caminhos, do melhor pro pior:
+
+### 1) WSL2 (recomendado — experiência idêntica ao Linux)
+
+```powershell
+wsl --install -d Ubuntu        # PowerShell como admin, reinicia
+```
+
+Dentro do Ubuntu (tudo inclusive o browser funciona — Xvfb incluso):
+
+```bash
+sudo apt update && sudo apt install -y python3-venv git
+git clone <seu-repo> && cd camoufox-automations
+python3 -m venv venv && venv/bin/pip install -r requirements.txt
+venv/bin/camoufox fetch
+venv/bin/python main.py newmais-login --save    # login browser normal
+```
+
+Aponte o cliente MCP (ex.: Hermes desktop) para o hub rodando dentro do WSL.
+
+### 2) Windows nativo com `HUB_DISPLAY=headless`
+
+Browser nativo sem janela. **Revalide o Cloudflare painel a painel** — a
+impressão digital do headless nativo difere do virtual e o CF pode reagir
+diferente:
+
+```powershell
+$env:HUB_DISPLAY = "headless"
+venv\Scripts\python main.py woodcine-status     # teste painel a painel
+```
+
+### 3) Windows nativo com X server externo (`HUB_DISPLAY=x11`)
+
+Instale o VcXsrv, exporte `DISPLAY=<ip>:0` e use `HUB_DISPLAY=x11`.
+
+### O que funciona no Windows SEM browser nenhum
+
+O transporte HTTP (FAST_SYNC, curl_cffi) e tudo que lê o banco local não
+abrem browser — no Windows nativo funcionam de primeira:
+
+```powershell
+venv\Scripts\python main.py blackbr-sync --what expiring   # HTTP puro, ~2s
+venv\Scripts\python main.py automations                     # inventário
+# busca local: buscar_cliente_* / listar_clientes_* via MCP
+```
+
+O que **precisa** de browser: login fresco, validação de expiração,
+exploradores. Sem display configurado, esses comandos falham com mensagem
+orientada apontando para as opções acima.
+
+
 ## Multi-conta (várias credenciais para o mesmo painel)
 
 Credenciais em `sigma_accounts.json` (raiz, gitignored) — a ordem do arquivo é
