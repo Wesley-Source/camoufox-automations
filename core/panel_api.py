@@ -483,12 +483,25 @@ def find_customer(client, customer_id: str) -> dict | None:
 def search_customers(client, term: str, max_pages: int = 25) -> list[dict]:
     """Busca PARCIAL de clientes na API (username/name/email contém termo).
 
-    Diferente de find_customer (id exato). A API não expõe filtro confiável
-    de busca (?username= nunca funcionou), então paginamos e filtramos aqui.
+    Diferente de find_customer (id exato). Fast path: GET /customers?username=
+    filtra server-side (validado ao vivo 04/10/2026: contém, honra ausência);
+    aceito só se total bate com 1 página inteira e toda row contém o termo.
+    Clientes/fakes sem _get (só .customers paginado) caem no fallback:
+    paginamos e filtramos aqui.
     """
     term = term.strip().lower()
     if not term:
         return []
+    if hasattr(client, "_get"):
+        resp = client._get("/customers", params={"page": 1, "perPage": 100, "username": term})
+        rows = resp.get("data", [])
+        total = resp.get("meta", {}).get("total")
+        matches = [
+            r for r in rows
+            if term in " ".join(str(r.get(k, "")) for k in ("username", "name", "email")).lower()
+        ]
+        if total is not None and total == len(rows) <= 100 and len(matches) == len(rows):
+            return rows
     hits, page = [], 1
     while page <= max_pages:
         resp = client.customers(page=page)
