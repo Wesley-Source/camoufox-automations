@@ -67,3 +67,7 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    fallback automático pro browser (`FAST_SYNC` validado ×4 em 03/10/2026).
    Rotina diária: `--what expiring` (1 request ~2s); sync completo só no boot
    ou semanal. Exploradores continuam SEMPRE browser + guard.
+8. **Docs viajam com o código**: toda mudança de código/behavior atualiza a
+   documentação NA MESMA commit (README, PANEL_MAP do painel, AGENTS.md,
+   docstrings CLI/MCP) — commit sem docs é commit incompleto. Vale para
+   humanos e agentes.
