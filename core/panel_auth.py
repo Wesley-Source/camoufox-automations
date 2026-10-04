@@ -256,7 +256,8 @@ def _ensure_multi(cfg, accounts: list, active: dict, proxy: str = None, guard=No
     order = [active] + [a for a in accounts if a["username"] != active["username"]]
     # SIGMA_ACCOUNT é override por processo: não persiste no ponteiro global.
     from_env = os.environ.get("SIGMA_ACCOUNT") == active["username"]
-    with m.BrowserEngine.get_page(proxy or m.default_proxy()) as page:
+    from core.browser import BrowserEngine  # lazy: não puxa camoufox no import do módulo
+    with BrowserEngine.get_page(proxy or m.default_proxy()) as page:
         captured: list = []
         m._attach_api_monitor(page, captured)
 
@@ -346,7 +347,8 @@ def ensure_logged_page(cfg, username: str = None, password: str = None, proxy: s
 
     saved = m.load_session(session_path)
 
-    with m.BrowserEngine.get_page(proxy or m.default_proxy()) as page:
+    from core.browser import BrowserEngine  # lazy: não puxa camoufox no import do módulo
+    with BrowserEngine.get_page(proxy or m.default_proxy()) as page:
         captured: list = []
         m._attach_api_monitor(page, captured)
 
@@ -434,7 +436,8 @@ def logged_page(cfg, username: str, password: str, proxy: str = None, guard=None
     if not username or not password:
         raise ValueError("username e password são obrigatórios")
 
-    with m.BrowserEngine.get_page(proxy) as page:
+    from core.browser import BrowserEngine  # lazy: não puxa camoufox no import do módulo
+    with BrowserEngine.get_page(proxy) as page:
         captured: list = []
         m._attach_api_monitor(page, captured)
         m._login_flow(page, username, password, captured)

@@ -621,15 +621,23 @@ def open_client_for(cls, session_path: str = None, proxy: str = None, guard=None
         # (A1: _request devolve Response cru — _get devolve JSON parseado e
         # .status_code em dict é AttributeError, o que derrubava o probe
         # silenciosamente e mandava TUDO pro browser).
+        # FIX noturno: o try/except cobre SÓ o probe — o yield NÃO pode ficar
+        # dentro dele, senão exceção do CORPO do `with` é engolida e o
+        # contextmanager cai no browser gerando "generator didn't stop
+        # after throw()" (mascara o erro real do chamador).
         try:
             sess = auth.load_session(_resolve_session_path())
-            if sess:
-                probe = http_client(sess)
-                if probe._request("/auth/me").status_code == 200:
-                    yield probe
-                    return
         except Exception:
-            pass  # cf_clearance expirou/rede — cai no browser abaixo
+            sess = None
+        if sess:
+            probe = http_client(sess)
+            try:
+                probe_ok = probe._request("/auth/me").status_code == 200
+            except Exception:
+                probe_ok = False
+            if probe_ok:
+                yield probe
+                return
     with auth.ensure_logged_page(session_path=session_path,
                                  proxy=proxy or auth.default_proxy(), guard=guard) as s:
         transport = _BrowserTransport(s.page, extra_headers=_AXIOS_HEADERS)
