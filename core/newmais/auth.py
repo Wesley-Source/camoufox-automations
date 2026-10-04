@@ -10,7 +10,6 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from core.browser import BrowserEngine, is_cf_challenge
 from core.panel_auth import SiteConfig
 from core import panel_auth as _base
 
@@ -36,6 +35,7 @@ _CFG = SiteConfig(
 
 def _login_flow(page, username: str, password: str, captured: list):
     page.goto(NEWMAIS_URL, wait_until="domcontentloaded", timeout=60_000)
+    from core.browser import is_cf_challenge  # lazy: tests offline não pagam camoufox/playwright
     # Hermes G4: challenge do CF = esperar, não "form nao encontrado".
     for _ in range(6):
         if not is_cf_challenge(page):
