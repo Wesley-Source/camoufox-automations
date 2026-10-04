@@ -31,7 +31,7 @@ def register(app: typer.Typer):
 
         try:
             with ensure_logged_page() as s:
-                username = s.account["username"] if s.account else "?"
+                username = s.account or "?"
                 typer.secho(f"✔ Sessão Rocket Gestor OK ({username}).", fg=typer.colors.GREEN)
                 if save:
                     save_session(s.page, username=username)

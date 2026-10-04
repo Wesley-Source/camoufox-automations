@@ -178,23 +178,31 @@ class _HttpTransport:
     def _call(self, method, url, params=None, json=None, headers=None, timeout=None):
         from urllib.parse import urlparse
 
-        from curl_cffi import requests as cffi
-        from curl_cffi.const import CurlOpt
+        try:
+            from curl_cffi import requests as cffi
+            from curl_cffi.const import CurlOpt
+        except ImportError as e:  # B3: erro orientado, não ImportError cru
+            raise RuntimeError(
+                "curl_cffi não instalado — transporte HTTP indisponível "
+                "(venv/bin/pip install curl_cffi) ou use transport='browser'.") from e
 
         # DNS local não resolve os hosts dos painéis (ISP) — resolve via DoH
         # (mesmo esquema do browser: dns.google) e fixa o IP no RESOLVE do
-        # curl. Cache TTL 5min; se o DoH falhar, tenta o DNS normal.
+        # curl. Cache: acerto TTL 5min, falha TTL 30s (B1: outage não pode
+        # custar uma resolução de 10s por request). Sem DoH → DNS normal.
         host = urlparse(url).hostname or ""
         opts = {}
         if host:
             ip, ts = self._doh.get(host, (None, 0.0))
-            if not ip or time.time() - ts > 300:
+            ttl = 300 if ip else 30
+            if not ip or time.time() - ts > ttl:
                 ip = doh_resolve(host)
                 self._doh[host] = (ip, time.time())
             if ip:
                 opts = {CurlOpt.RESOLVE: [f"{host}:443:{ip}", f"{host}:80:{ip}"]}
 
-        t = timeout / 1000 if (timeout or 0) > 1000 else (timeout or 30)
+        # B2: >=1000 é ms; abaixo é segundos já
+        t = timeout / 1000 if (timeout or 0) >= 1000 else (timeout or 30)
         r = cffi.request(
             method, url, params=params, json=json,
             headers=self._headers(headers), cookies=self._cookiejar,
@@ -573,6 +581,27 @@ def open_client_for(cls, session_path: str = None, proxy: str = None, guard=None
     auth = cls._AUTH
     mode = transport or ("auto" if cls.FAST_SYNC else "browser")
 
+    # A2: guard é kill switch de rede no browser — sem page ele não existe.
+    if guard is not None and mode in ("http", "auto"):
+        raise RuntimeError(
+            "guard só funciona com browser (precisa de page para interceptar "
+            "requests) — use transport='browser' ou omita o guard.")
+
+    def _resolve_session_path():
+        # M1: multi-conta — http/auto precisam da MESMA conta ativa que o
+        # browser usaria (SIGMA_ACCOUNT > last_good > primeira do arquivo).
+        if session_path:
+            return session_path
+        try:
+            accounts = auth.load_accounts()
+            if accounts:
+                active = auth.resolve_active_account(accounts)
+                if active:
+                    return auth.session_path_for(active["username"], accounts)
+        except Exception:
+            pass  # auth sem multi-conta — cai no default
+        return cls.DEFAULT_SESSION_FILE
+
     def http_client(sess):
         return cls(token=sess["token"],
                    session_path=session_path or cls.DEFAULT_SESSION_FILE,
@@ -580,7 +609,7 @@ def open_client_for(cls, session_path: str = None, proxy: str = None, guard=None
                                             extra_headers=_AXIOS_HEADERS))
 
     if mode == "http":
-        sess = auth.load_session(session_path or cls.DEFAULT_SESSION_FILE)
+        sess = auth.load_session(_resolve_session_path())
         if not sess:
             raise RuntimeError(
                 f"Sem sessão válida — rode main.py {cls.VENDOR}-login --save primeiro.")
@@ -589,11 +618,14 @@ def open_client_for(cls, session_path: str = None, proxy: str = None, guard=None
 
     if mode == "auto":
         # self-healing: sessão salva + probe barato; CF barrando → browser
+        # (A1: _request devolve Response cru — _get devolve JSON parseado e
+        # .status_code em dict é AttributeError, o que derrubava o probe
+        # silenciosamente e mandava TUDO pro browser).
         try:
-            sess = auth.load_session(session_path or cls.DEFAULT_SESSION_FILE)
+            sess = auth.load_session(_resolve_session_path())
             if sess:
                 probe = http_client(sess)
-                if probe._get("/auth/me").status_code == 200:
+                if probe._request("/auth/me").status_code == 200:
                     yield probe
                     return
         except Exception:

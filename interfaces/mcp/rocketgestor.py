@@ -34,8 +34,10 @@ def _login_rocketgestor(user: str = None) -> str:
         acc = {"username": os.environ.get("SIGMA_USERNAME", ""),
                "password": os.environ.get("SIGMA_PASSWORD", "")}
     try:
-        with ensure_logged_page(username=acc["username"], password=acc["password"]) as s:
-            save_session(s.page, username=acc["username"])
+        if user:
+            os.environ["SIGMA_ACCOUNT"] = user  # auth.resolve_active_account honra
+        with ensure_logged_page() as s:
+            save_session(s.page, username=s.account["username"] if s.account else acc["username"])
         return f"Login rocketgestor OK: {acc['username']} (sessão salva)."
     except Exception as e:
         return f"Login rocketgestor falhou: {e} — confirme a senha antes de repetir (ban counter)."

@@ -12,6 +12,7 @@ REAIS intocados sem aprovação explícita.
 Login sem brute-force: tentativa errada pode gerar bloqueio; só tenta com
 credencial confirmada (accounts file 0600).
 """
+import fcntl
 import json
 import os
 import time
@@ -93,9 +94,15 @@ def _restore_cookies(page, sess: dict) -> None:
 
 
 def _logged_in(page) -> bool:
-    """Na área autenticada? (login page = não logado)."""
+    """Na área autenticada? Checa URL + fetch ativo do dashboard (G3):
+    sessão morta redireciona o fetch para o login (status 0 no manual)."""
     try:
-        return "/accounts/login" not in (page.url or "")
+        if "/accounts/login" in (page.url or ""):
+            return False
+        return page.evaluate(
+            "fetch('/gerenciador/dashboard/', {redirect:'manual'})"
+            ".then(r => r.status === 200)"
+        )
     except Exception:
         return False
 
@@ -162,30 +169,35 @@ def ensure_logged_page(session_path: str = None, proxy: str = None, guard=None):
                         s.blocked = guard(page)
                     yield s
                     return
-            # Login fresco (1 tentativa, credencial confirmada)
-            page.goto(ROCKET_URL + LOGIN_PATH, wait_until="domcontentloaded",
-                      timeout=60_000)
-            for _ in range(6):
-                if not is_cf_challenge(page):
-                    break
-                time.sleep(5)
-            _fill_login(page, active["username"], active["password"])
-            # Django redirecta pós-login; espera sair do /accounts/login
-            deadline = time.time() + 60
-            while time.time() < deadline:
-                try:
-                    if _logged_in(page):
+            # M6: serializa relogin entre processos (cron + MCP simultâneos
+            # não abrem dois logins Django na mesma conta).
+            lock = Path(session_path or ROCKET_SESSION_FILE).with_suffix(".lock")
+            with open(lock, "w") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)  # bloqueante; ok p/ 2-3 processos
+                # Login fresco (1 tentativa, credencial confirmada)
+                page.goto(ROCKET_URL + LOGIN_PATH, wait_until="domcontentloaded",
+                          timeout=60_000)
+                for _ in range(6):
+                    if not is_cf_challenge(page):
                         break
-                except Exception:
-                    pass
-                time.sleep(2)
-            else:
-                raise RuntimeError(
-                    f"Login rocketgestor falhou para {active['username']} "
-                    "(credencial ou CF). NÃO repita sem confirmar a senha."
-                )
-            save_session(page, session_path, username=active["username"])
-            _write_last_good(active["username"])
+                    time.sleep(5)
+                _fill_login(page, active["username"], active["password"])
+                # Django redirecta pós-login; espera sair do /accounts/login
+                deadline = time.time() + 60
+                while time.time() < deadline:
+                    try:
+                        if _logged_in(page):
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(2)
+                else:
+                    raise RuntimeError(
+                        f"Login rocketgestor falhou para {active['username']} "
+                        "(credencial ou CF). NÃO repita sem confirmar a senha."
+                    )
+                save_session(page, session_path, username=active["username"])
+                _write_last_good(active["username"])
             if guard:
                 s.blocked = guard(page)
             yield s

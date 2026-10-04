@@ -198,7 +198,7 @@ def resolve_active_account(cfg, accounts: list | None = None) -> dict | None:
 
 def restore_session(cfg, page, session: dict) -> None:
     """Injeta cookies (cf_clearance incluído) + localStorage ANTES do SPA carregar."""
-    page.context.add_cookies(session["cookies"])
+    page.context.add_cookies(session.get("cookies", []))
     storage = json.dumps(session.get("local_storage", {}))
     json.loads(storage)  # CR-18: só embute no JS se for JSON válido
     # add_init_script não aceita argumentos nesta versão do Playwright —

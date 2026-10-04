@@ -15,6 +15,10 @@ def _display_mode() -> str:
     mode = (os.environ.get("HUB_DISPLAY") or "").strip().lower()
     if mode in _HEADLESS_BY_MODE:
         return mode
+    if mode:
+        raise RuntimeError(
+            f"HUB_DISPLAY inválido: {mode!r}. Use virtual, headless ou x11."
+        )
     if sys.platform == "win32":
         raise RuntimeError(
             "Display virtual (Xvfb) só existe no Linux. No Windows, escolha:\n"
@@ -67,9 +71,20 @@ class BrowserEngine:
         com None o browser sai pelo egress local e o CF bloqueia.
         """
         proxy = proxy or os.environ.get("SIGMA_PROXY")
-        with Camoufox(headless=_HEADLESS_BY_MODE[_display_mode()],
-                      proxy=_normalize_proxy(proxy),
-                      firefox_user_prefs=_GOOGLE_DOH_PREFS) as browser:
+        try:
+            cm = Camoufox(headless=_HEADLESS_BY_MODE[_display_mode()],
+                          proxy=_normalize_proxy(proxy),
+                          firefox_user_prefs=_GOOGLE_DOH_PREFS)
+        except RuntimeError:
+            raise
+        except Exception as e:  # M4: Xvfb ausente = traceback cru do pyvirtualdisplay
+            if "Xvfb" in str(e) or "EasyProcess" in type(e).__name__:
+                raise RuntimeError(
+                    "Xvfb não encontrado (display virtual do Linux). Instale com "
+                    "'sudo apt install xvfb' ou use HUB_DISPLAY=headless (sem janela)."
+                ) from e
+            raise
+        with cm as browser:
             page = browser.new_page()
             try:
                 yield page

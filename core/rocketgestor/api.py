@@ -191,27 +191,46 @@ class RocketGestorClient:
         if plano and not plano.isdigit():
             m = re.search(r'<option value="(\d+)"[^>]*>\s*' + re.escape(plano), info, re.I)
             plano = m.group(1) if m else plano
-        forma = overrides.get("forma_de_pagamento", "")
-        if forma and not str(forma).isdigit():
-            fm = re.search(r'<option value="(\d+)"[^>]*>\s*' + re.escape(str(forma)), info, re.I)
-            overrides["forma_de_pagamento"] = fm.group(1) if fm else forma
+        forma = str(overrides.get("forma_de_pagamento", "") or "")
+        if forma and not forma.isdigit():
+            fm = re.search(r'<option value="(\d+)"[^>]*>\s*' + re.escape(forma), info, re.I)
+            forma = fm.group(1) if fm else forma
+        if not forma:
+            # painel EXIGE forma no edit; a row não expõe — extrai do texto
+            # da Dados tab da info page (PIX/Boleto/Cartão/... → ID do select)
+            fm = re.search(r"\b(PIX|Boleto|Cart[ãa]o|Dep[oó]sito|Dinheiro)\b", info, re.I)
+            if not fm:
+                raise RocketGestorError(
+                    "forma_de_pagamento é obrigatória no editar e não foi achada "
+                    "na info page — informe no override (texto ou ID).")
+            om = re.search(r'<option value="(\d+)"[^>]*>\s*' + re.escape(fm.group(1)), info, re.I)
+            forma = om.group(1) if om else fm.group(1)
+        overrides["forma_de_pagamento"] = forma
         csrf = (re.search(r'csrfmiddlewaretoken" value="([^"]+)"', info) or [None, ""])[1]
         data = {
-            "nome": row["nome"], "usuario": row["login"], "senha": "",
-            "painel_id": "", "telefone_0": "BR", "telefone_1": tel_fmt,
-            "telefone_secundario_0": "BR", "telefone_secundario_1": "",
+            "nome": row["nome"], "usuario": row["login"],
+            "telefone_0": "BR", "telefone_1": tel_fmt,
             "vencimento": iso, "hora_vencimento": (hms.strip() or "23:59"),
-            "email": "", "observacao": "", "servidor": "",
             "plano": plano, "valor": row["valor"].replace("R$ ", "").replace(",", "."),
-            "forma_de_pagamento": "", "telas": row["telas"],
-            "pix": "", "renew_url": "", "pontos_fidelidade": "0.0",
-            "captacao": "", "indicado_por": "", "dispositivo": "", "aplicativo": "",
-            "vencimento_aplicativo": "", "mac": "", "device_key_or_OTP_code": "",
-            "link_m3u": "", "time": "", "tipo_cliente": "", "aniversario": "",
-            "nao_receber_mensagem_ate": "",
-            **overrides,
-            "csrfmiddlewaretoken": csrf,
+            "telas": row["telas"],
         }
+        # UPDATE-SENHA (review): opcionais em branco SÓ vão se o caller mandar —
+        # postar senha:''/servidor:'' zeraria dados que a row não expõe.
+        for k, v in {
+            "senha": "", "painel_id": "", "email": "", "observacao": "",
+            "servidor": "", "telefone_secundario_0": "BR",
+            "telefone_secundario_1": "", "pix": "", "renew_url": "",
+            "pontos_fidelidade": "0.0", "captacao": "", "indicado_por": "",
+            "dispositivo": "", "aplicativo": "", "vencimento_aplicativo": "",
+            "mac": "", "device_key_or_OTP_code": "", "link_m3u": "",
+            "time": "", "tipo_cliente": "", "aniversario": "",
+            "nao_receber_mensagem_ate": "", "forma_de_pagamento": "",
+        }.items():
+            val = overrides.get(k, v)
+            if val:
+                data[k] = val
+        data.update(overrides)  # overrides explícitos sempre vencem
+        data["csrfmiddlewaretoken"] = csrf
         r = self._post(f"/gerenciador/cliente/editar?cliente_id={cliente_id}", data)
         alert = self._alert(r)
         return {"ok": not alert, "id": str(cliente_id), "status": r.status_code, "alert": alert}
