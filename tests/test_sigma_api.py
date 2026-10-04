@@ -251,3 +251,9 @@ def test_project_response_nao_vaza_row():  # M2
     assert out == {"id": "X1", "deleted_at": "2026-10-01", "status": "ok"}
     assert "password" not in out
     assert project_response("<html>cf</html>") == {"raw": "<html>cf</html>"}
+
+
+def test_customer_playlist_url(client):
+    client._session.responses = [FakeResponse(200, [{"key": "pt", "template": "x"}])]
+    client.customer_playlist("ID1")
+    assert client._session.calls[-1]["url"].endswith("/customers/ID1/playlist")

@@ -349,6 +349,53 @@ def register(app: typer.Typer):
             fg=typer.colors.GREEN,
         )
 
+    @app.command("woodcine-customer-playlist")
+    def cli_woodcine_customer_playlist(
+        customer_id: str = typer.Argument(..., help="ID do cliente."),
+        mascarar: bool = typer.Option(False, "--mascarar", help="Esconde senha/m3u_url (padrão: em claro — decisão do dono 03/10/2026)."),
+    ):
+        """
+        Mostra os dados da aba Playlist do cliente (credenciais IPTV + apps).
+
+        Use quando: o cliente pediu os próprios dados para configurar o app.
+        Retorna: username/senha IPTV EM CLARO (exceção documentada da regra
+        5, decisão do dono 03/10/2026) + status/expiração + template se houver.
+        Cuidados: --mascarar esconde os segredos (p/ conversa pública).
+        Paridade MCP: playlist_cliente(painel="woodcine").
+        """
+        try:
+            with open_client() as client:
+                row = find_customer(client, customer_id)
+                if not row:
+                    typer.secho(f"✖ Cliente {{customer_id}} não encontrado no painel (rode woodcine-sync se o banco local está stale).", fg=typer.colors.RED)
+                    raise typer.Exit(1)
+                fields = {
+                    "id": str(row.get("id", customer_id)),
+                    "username": row.get("username"),
+                    "password": row.get("password"),
+                    "m3u_url": row.get("m3u_url"),
+                    "status": row.get("status"),
+                    "expira_em": row.get("expiry_date") or row.get("expires_at"),
+                }
+                try:
+                    pl = client.customer_playlist(customer_id)
+                    if isinstance(pl, list):
+                        extras = [x for x in pl if isinstance(x, dict) and "template" not in x]
+                        if extras:
+                            fields["playlist_templates"] = extras
+                except Exception:
+                    pass  # credenciais do row bastam; rota pode devolver só templates
+        except typer.Exit:
+            raise
+        except Exception as e:
+            typer.secho(f"✖ Playlist falhou: {{e}}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+        if mascarar:
+            for k in ("password", "m3u_url"):
+                if fields.get(k):
+                    fields[k] = str(fields[k])[:4] + "…"
+        typer.echo(json.dumps(fields, ensure_ascii=False, indent=2))
+
     @app.command("woodcine-servers-packages")
     def cli_woodcine_servers_packages(
         json_out: bool = typer.Option(False, "--json", help="Catálogo completo em JSON."),

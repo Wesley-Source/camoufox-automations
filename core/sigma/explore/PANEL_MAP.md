@@ -100,6 +100,13 @@ Endpoints confirmados (chunk `customer-BPdT3J4I.js` + validação real):
 | Criar | `POST /api/customers` | `201 {data:{id,...}}` |
 | Editar/renovar | `PUT /api/customers/{id}` | `200` |
 | Resync no stream | `POST /api/customers/{id}/resync` | `200` |
+
+Aba **Playlist** do cliente: `GET /api/customers/{id}/playlist` (rota igual nos
+4 painéis) devolve templates por idioma (fallback se o admin não configurou);
+as credenciais IPTV que a UI mostra vêm do próprio row do cliente. Expostas
+via MCP `playlist_cliente(painel, customer_id)` e CLI
+`<painel>-customer-playlist ID` — credenciais em claro por decisão do dono
+(exceção da regra 5).
 | Excluir | `DELETE /api/customers/{id}` | `200 {deleted_at}` — **soft delete** |
 | Restaurar | `POST /api/customers/restore` | confirmado só no chunk JS — NUNCA testado |
 | Calcular preço | `POST /api/customers/calculate-plan-price` | — |

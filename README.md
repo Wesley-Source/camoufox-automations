@@ -105,6 +105,9 @@ core/
 interfaces/
   cli/                  # Typer: __init__ (hub+automations) + um módulo por site
   mcp/                  # FastMCP: server.py (hub) + um módulo por site (50 tools)
+                        #   + playlist.py (playlist_cliente — 51ª tool; mostra
+                        #   login/senha IPTV do cliente EM CLARO por decisão do
+                        #   dono — exceção da regra 5, ver AGENTS.md)
 tests/                  # pytest (151 testes; paridade ×4 em CI — drift entre sites quebra o build)
 main.py                 # `main.py` = CLI | `main.py mcp` = servidor MCP
 ```

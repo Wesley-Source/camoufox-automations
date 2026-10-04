@@ -440,6 +440,12 @@ class PanelApiClient:
     def resync_customer(self, customer_id: str) -> dict | list:
         return self._mutate("POST", f"/customers/{quote(str(customer_id), safe='')}/resync", {})
 
+    def customer_playlist(self, customer_id: str) -> dict | list:
+        # GET /customers/{id}/playlist — rota igual nos 4 painéis sigma.
+        # Retorna templates por idioma (mensagem fallback se o admin não
+        # configurou template para o servidor do cliente).
+        return self._get(f"/customers/{quote(str(customer_id), safe='')}/playlist")
+
     def delete_customer(self, customer_id: str) -> dict | list:
         """DELETE /customers/{id} — SOFT delete (resposta traz deleted_at;
         restore existe em POST /customers/restore, ainda não testado)."""

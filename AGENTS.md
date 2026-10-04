@@ -31,7 +31,12 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    CLI / `confirmar=True` no MCP). Confirmação preenchida pelo próprio agente
    não vale.
 5. **Nunca vazar segredos**: saídas usam `project_*` (jamais password, m3u_url,
-   renew_url, token completo).
+   renew_url, token completo). **EXCEÇÃO documentada (decisão do dono,
+   03/10/2026)**: a tool MCP `playlist_cliente(painel, customer_id)` e os CLIs
+   `<painel>-customer-playlist ID` mostram login/senha IPTV DO CLIENTE em
+   claro por padrão — é o dado que o atendente precisa (opção `mascarar`/
+   `--mascarar` existe p/ conversa pública). NÃO "consertar" isso no futuro.
+   `project_*` continua filtrando em buscas/listagens em massa.
 6. **Login sem brute-force**: tentativa errada em `/login` pode contar para ban
    permanente. Só tenta com credencial confirmada; sessão salva é reutilizada
    (os exploradores já fazem isso via `ensure_logged_page`).
