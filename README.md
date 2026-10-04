@@ -141,8 +141,9 @@ venv/bin/python main.py newmais-login --save               # gera newmais_sessio
   Ciclo completo de validação (blackbr+lideriptv): 47.0s → 42.0s (04/10/2026).
   Nunca passar `curl_options`/RESOLVE por request em cima da session (mata o
   pool e piora ~50%).
-- **DoH com cache em disco**: `doh_resolve` cacheia em `/tmp/opencode`
-  (TTL 300s acerto / 30s falha) — CLIs e syncs não re-resolvem por processo.
+- **DoH com cache em memória**: `doh_resolve` cacheia resultados em processo
+  (TTL 300s acerto / 30s falha). Cache em disco foi testado (karpathy R4) e
+  REJEITADO — DoH já responde < 100ms, disco não move a métrica.
 - **Import lazy de `core.browser`**: ver regra 9 do AGENTS.md — testes e
   comandos offline não pagam camoufox+playwright (ciclo de testes
   1.21s → 0.53s).
