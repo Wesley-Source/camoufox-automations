@@ -104,7 +104,7 @@ AUTOMATIONS = [
     {"id": "ecommerce.sync", "site": "ecommerce_x", "kind": "sync", "status": "ok",
      "what": "Demo de sincronização de produto (httpbin) + teste de regressão",
      "run": "main.py sync-item ID"},
-    # ---- woodcine (painel irmão, 2ª versão do Sigma; CRUD ainda sem validação ao vivo) ----
+    # ---- woodcine (painel irmão, 2ª versão do Sigma; CRUD validado por probes 04/10/2026) ----
     {"id": "woodcine.login", "site": "woodcine", "kind": "auth", "status": "ok",
      "what": "Login no painel woodcine: imprime o token (env SIGMA_USERNAME/SIGMA_PASSWORD)",
      "run": "main.py woodcine-login --save"},
@@ -132,6 +132,18 @@ AUTOMATIONS = [
     {"id": "woodcine.status", "site": "woodcine", "kind": "status", "status": "ok",
      "what": "Token/conta do woodcine + resumo do banco local",
      "run": "main.py woodcine-status"},
+    # CRUD validado ao vivo por probes não-mutantes (regra 3): create inválido
+    # -> 422 (valida antes, cria nada); delete id inexistente -> 404; tripwire
+    # estável (04/10/2026). Créditos LIMITADOS: só executar com pedido do dono.
+    {"id": "woodcine.customer.create", "site": "woodcine", "kind": "crud", "status": "ok",
+     "what": "Cria cliente (idêntico ao sigma; só com aprovação do dono — créditos limitados)",
+     "run": "main.py woodcine-customer-create --username X --package-id P --server-id S"},
+    {"id": "woodcine.customer.update", "site": "woodcine", "kind": "crud", "status": "ok",
+     "what": "Edita nota e/ou estende expiração (+dias ou data)",
+     "run": "main.py woodcine-customer-update ID --note '...' --add-days 30"},
+    {"id": "woodcine.customer.delete", "site": "woodcine", "kind": "crud", "status": "ok",
+     "what": "Soft-delete de cliente (restaurável; exige --yes E SIGMA_ALLOW_DESTRUCTIVE=1)",
+     "run": "SIGMA_ALLOW_DESTRUCTIVE=1 main.py woodcine-customer-delete ID --yes"},
     # ---- newmais (painel irmão família Sigma; créditos LIMITADOS — regra 2 máxima) ----
     {"id": "newmais.login", "site": "newmais", "kind": "auth", "status": "ok",
      "what": "Login no painel newmais: imprime o token (env SIGMA_USERNAME/SIGMA_PASSWORD)",
@@ -160,6 +172,18 @@ AUTOMATIONS = [
     {"id": "newmais.status", "site": "newmais", "kind": "status", "status": "ok",
      "what": "Token/conta do newmais + resumo do banco local",
      "run": "main.py newmais-status"},
+    # CRUD validado ao vivo por probes não-mutantes (regra 3): create inválido
+    # -> 422; delete id inexistente -> 404; tripwire estável (04/10/2026).
+    # Créditos LIMITADOS: só executar com pedido do dono.
+    {"id": "newmais.customer.create", "site": "newmais", "kind": "crud", "status": "ok",
+     "what": "Cria cliente (idêntico ao sigma; só com aprovação do dono — créditos limitados)",
+     "run": "main.py newmais-customer-create --username X --package-id P --server-id S"},
+    {"id": "newmais.customer.update", "site": "newmais", "kind": "crud", "status": "ok",
+     "what": "Edita nota e/ou estende expiração (+dias ou data)",
+     "run": "main.py newmais-customer-update ID --note '...' --add-days 30"},
+    {"id": "newmais.customer.delete", "site": "newmais", "kind": "crud", "status": "ok",
+     "what": "Soft-delete de cliente (restaurável; exige --yes E SIGMA_ALLOW_DESTRUCTIVE=1)",
+     "run": "SIGMA_ALLOW_DESTRUCTIVE=1 main.py newmais-customer-delete ID --yes"},
     # ---- blackbr (painelblackbr.com, família Sigma; painel de revendas com créditos ILIMITADOS) ----
     {"id": "blackbr.login", "site": "blackbr", "kind": "auth", "status": "ok",
      "what": "Login no painelblackbr: imprime o token (env SIGMA_USERNAME/SIGMA_PASSWORD)",
@@ -188,6 +212,17 @@ AUTOMATIONS = [
     {"id": "blackbr.status", "site": "blackbr", "kind": "status", "status": "ok",
      "what": "Token/conta do blackbr + resumo do banco local",
      "run": "main.py blackbr-status"},
+    # CRUD validado ao vivo: ciclo real completo (criar/renovar/senha/playlist/
+    # deletar verificado) no karpathy noturno 04/10/2026.
+    {"id": "blackbr.customer.create", "site": "blackbr", "kind": "crud", "status": "ok",
+     "what": "Cria cliente (payload mínimo; 422 preenche iterativamente)",
+     "run": "main.py blackbr-customer-create --username X --package-id P --server-id S"},
+    {"id": "blackbr.customer.update", "site": "blackbr", "kind": "crud", "status": "ok",
+     "what": "Edita cliente (strip de username/password no update — UPDATE_STRIP_FIELDS)",
+     "run": "main.py blackbr-customer-update ID --note '...' --add-days 30"},
+    {"id": "blackbr.customer.delete", "site": "blackbr", "kind": "crud", "status": "ok",
+     "what": "Soft-delete de cliente (restaurável; exige --yes E SIGMA_ALLOW_DESTRUCTIVE=1)",
+     "run": "SIGMA_ALLOW_DESTRUCTIVE=1 main.py blackbr-customer-delete ID --yes"},
 
     # ---- rocketgestor (app.rocketgestor.com; Django server-rendered NÃO-sigma; gerenciador multipainel com créditos INEXISTENTES — zz_test_* LIVRES, clientes reais intocados) ----
     {"id": "rocketgestor.login", "site": "rocketgestor", "kind": "auth", "status": "ok",
