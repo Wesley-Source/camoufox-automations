@@ -49,6 +49,10 @@ newmais.sigma.vin. A segurança não é sugerida — é arquitetural:
 | `woodcine` | woodcine.sigma.st | **LIMITADOS** | `/api` | `woodcine.*` |
 | `blackbr` | painelblackbr.com | ilimitados | `host` | `blackbr.*` |
 | `newmais` | newmais.sigma.vin | **LIMITADOS** | `/api` | `newmais.*` |
+| `rocketgestor` | app.rocketgestor.com | inexistentes — zz_test_* **livres**² | n/a (Django) | Fase 2 |
+
+² Rocket Gestor não tem sistema de créditos: criar/alterar/deletar **clientes de
+teste** (`zz_test_*`) é livre para validar CRUD — clientes REAIS seguem intocados.
 
 ¹ Validação de CRUD **somente por probes não-mutantes** (422 payload inválido,
 404 ID inexistente, tripwire de contagem) nos painéis de créditos limitados —

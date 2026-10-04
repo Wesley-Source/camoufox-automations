@@ -47,3 +47,10 @@ newmais_session.json
 newmais_session.lock
 .newmais_last_good
 .newmais_session_*.json
+
+# rocketgestor (5o site — Django, sessao por cookies)
+rocketgestor_accounts.json
+rocketgestor_session.json
+rocketgestor_session.lock
+.rocketgestor_last_good
+.rocketgestor_session_*.json
