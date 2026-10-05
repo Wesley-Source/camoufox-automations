@@ -30,7 +30,7 @@ def _display_mode() -> str:
         )
     return "virtual"
 
-# DNS local da máquina falha p/ alguns domínios (ex.: *.sigma.st) — forçar Google DoH.
+# DNS local da máquina falha p/ alguns domínios de painéis — forçar Google DoH.
 # ponytail: TRR mode 3 = só DoH, sem fallback ao DNS do sistema quebrado.
 _GOOGLE_DOH_PREFS = {
     "network.trr.mode": 3,

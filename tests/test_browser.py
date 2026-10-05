@@ -1,13 +1,9 @@
-"""Testes do browser e do proxy (CR-02: Camoufox quer dict, não str)."""
+"""Testes do browser e do proxy (CR-02: Camoufox quer dict, não str).
+
+O teste de default_proxy (usa core.<site>.auth do repo privado) vive no
+privado, anexado a tests/test_sigma_auth.py.
+"""
 from core.browser import _normalize_proxy
-from core.sigma.auth import default_proxy
-
-
-def test_default_proxy_do_env(monkeypatch):
-    monkeypatch.delenv("SIGMA_PROXY", raising=False)
-    assert default_proxy() is None
-    monkeypatch.setenv("SIGMA_PROXY", "socks5://100.1.2.3:1080")
-    assert default_proxy() == "socks5://100.1.2.3:1080"
 
 
 def test_normalize_proxy_str_vira_dict():

@@ -7,12 +7,14 @@ First off, thank you for considering contributing! This project is operated by b
 Camoufox Automations is a stealth browser-automation hub: one folder per automated site, shared engines for CLI (Typer) and MCP (FastMCP) interfaces, ELT into SQLite, and a test suite that gates every change.
 
 ```
-core/<site>/          # per-site: auth, api, scraper, explore/ (read-only probes)
+core/ecommerce_x/     # example site (httpbin) — the worked template
 core/panel_*.py       # shared base classes (SiteConfig, auth, api, scraper)
-interfaces/cli/       # Typer CLI per site (thin specs over shared engines)
-interfaces/mcp/       # FastMCP tools per site
-tests/                # 163+ tests; parity tests enforce CLI↔MCP symmetry
+interfaces/cli/       # Typer CLI engines + registry (site specs come from the private repo)
+interfaces/mcp/       # FastMCP engines + registry (site specs come from the private repo)
+tests/                # framework tests; per-site tests live in camoufox-panels (private)
 ```
+
+Real site modules live in the **private** companion repo `camoufox-panels`; clone it side by side and run `../camoufox-panels/join.sh` to attach it (see README "Connecting real panels").
 
 ## Ground rules
 
@@ -20,7 +22,7 @@ tests/                # 163+ tests; parity tests enforce CLI↔MCP symmetry
 2. **Guard before exploring.** Exploratory scripts must install the central guard (`core/guard.py`) that blocks mutating HTTP at the browser level.
 3. **Snapshot before and after writes.** Divergence beyond the test entity = failure.
 4. **No secrets, ever.** Credentials live in `*_accounts.json` / `*_session.json` (gitignored, 0600). If you find a secret anywhere, report it privately — do not open a public issue.
-5. **Parity is enforced.** A fix in one site's `auth.py` must be replicated in the shared base (`core/panel_auth.py`) or all sibling sites. `tests/test_auth_parity.py` fails on public-surface drift.
+5. **Parity is enforced.** A fix in one site's `auth.py` must be replicated in the shared base (`core/panel_auth.py`) or all sibling sites. `tests/test_auth_parity.py` (private repo) fails on public-surface drift.
 6. **Docs travel with code.** A behavior change without a README/AGENTS.md/docstring update in the same commit is an incomplete commit.
 7. **Lazy imports for heavy modules.** `core.browser` (Playwright/Camoufox, ~0.5s) must not be imported at module top-level in `auth.py` files — use PEP 562 `__getattr__`.
 
@@ -37,8 +39,8 @@ pip install -r requirements.txt
 ## Pull request process
 
 1. Branch from `main` (`feat/...`, `fix/...`, `docs/...`).
-2. Run the full test suite — it takes ~4s. PRs with failing tests are not reviewed.
-3. New panel? Follow the pattern: copy the most complete `auth.py`, adjust config, port `api/scraper/CLI/MCP` in that order, CRUD last. See `AGENTS.md` rule 7.
+2. Run the full test suite — it takes ~10s. PRs with failing tests are not reviewed.
+3. New panel? Follow the pattern: copy the most complete `auth.py`, adjust config, port `api/scraper/CLI/MCP` in that order, CRUD last. Real panels live in the private repo. See `AGENTS.md` rule 7.
 4. Commit messages follow Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`).
 5. Describe **what** and **why**; the diff shows **how**.
 

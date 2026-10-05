@@ -28,7 +28,7 @@ class SiteConfig:
     """Config declarativa do site. Os ARQUIVOS e tempos resolvem via
     getattr(module, attr) a cada chamada — patchable pelos testes."""
     name: str                    # "sigma" | "woodcine" | "blackbr"
-    url: str                     # ex.: https://lideriptv.sigma.st
+    url: str                     # ex.: https://painel.example.com
     module: object               # módulo do site (late binding)
     session_attr: str            # nome da constante SESSION_FILE no módulo
     accounts_attr: str

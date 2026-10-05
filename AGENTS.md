@@ -13,8 +13,10 @@ Rules:
 
 ## Painel safety rules (REGRA PERMANENTE — humanos e agentes de IA)
 
-Este hub opera painéis de clientes REAIS (lideriptv, woodcine, painelblackbr, newmais, ...).
-Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociáveis:
+Os sites reais operados por este hub vivem no repo PRIVADO `camoufox-panels`
+(painéis de clientes REAIS — créditos/clientes podem ser limitados ou pagos).
+Nomes e URLs dos painéis NUNCA entram neste repo público. Regras inegociáveis
+(valem também no privado, onde o manual íntegro está):
 
 1. **Exploração é read-only.** Todo script em `core/*/explore/` roda somente-leitura
    e DEVE instalar o guard: `ensure_logged_page(..., guard=install_guard)` de
@@ -47,7 +49,7 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    (~30/45 linhas) sobre os engines `interfaces/{cli,mcp}/_panel.py` — os
    10 comandos/12 tools vivem no engine (leitura late-binding via getattr:
    monkeypatch nos módulos dos sites continua valendo); superfície gateada
-   em `tests/test_cli_mcp_parity.py`.
+   em `tests/test_cli_mcp_parity.py` (repo privado).
 
 ## Operational guidelines (browser/CF) — post-mortem Hermes 02/10/2026
 
@@ -68,8 +70,8 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    MESMA rodada (os 4 são gêmeos). As bases compartilhadas são `core/panel_auth.py`, `core/panel_api.py` e
    `core/panel_scraper.py` — correção vai no BASE, não nas cópias; `core/<site>/{auth,api,scraper}.py` é só
    config + `_login_flow` + wrappers. Painel novo = copiar o auth.py mais
-   completo e conferir item a item. `tests/test_auth_parity.py` falha se a
-   superfície pública divergir.
+   completo e conferir item a item. `tests/test_auth_parity.py` (repo privado)
+   falha se a superfície pública divergir.
 6. **NÃO fazer**: múltiplos browsers/logins simultâneos (red flag CF), raspar
    DOM quando existe API JSON, repetir requests sem rate limit.
 7. **Sync rápido**: os clients usam transporte HTTP direto (curl_cffi) com
@@ -87,7 +89,7 @@ Créditos e clientes nesses painéis PODEM SER LIMITADOS/PAGOS. Regras inegociá
    monkeypatch dos testes continuam funcionando); dentro das funções, import
    local. Import no topo puxa camoufox+playwright (~0.5s) para testes/syncs
    offline; importtime medido caiu 1.21s → 0.53s no ciclo de testes. Ao criar
-   site novo, seguir o padrão (ver blackbr/newmais auth.py).
+   site novo, seguir o padrão (ver os auth.py dos sites no repo privado).
 10. **Display do browser**: `HUB_DISPLAY` escolhe `virtual` (Xvfb, padrão
    Linux), `headless` (nativo — revalidar CF painel a painel) ou `x11`
    (DISPLAY externo). No Windows nativo só `headless`/`x11`; o recomendado

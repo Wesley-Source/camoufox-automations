@@ -1,3 +1,5 @@
+from importlib.util import find_spec
+
 from core.automations import AUTOMATIONS
 
 
@@ -10,7 +12,12 @@ def test_inventario_consistente():
 
 
 def test_runs_de_automacoes_ok_existem():  # CR-28
-    """Automations 'ok' apontam pra CLI real ou script existente no disco."""
+    """Automations 'ok' apontam pra CLI real ou script existente no disco.
+
+    Entradas de um site cujos módulos não estão instalados (repo privado
+    camoufox-panels ausente) são puladas — o público valida o framework;
+    com os sites juntados (join.sh), tudo é validado.
+    """
     from pathlib import Path
 
     from interfaces.cli import cli_app
@@ -18,6 +25,8 @@ def test_runs_de_automacoes_ok_existem():  # CR-28
     cli_cmds = {c.name for c in cli_app.registered_commands}
     for a in AUTOMATIONS:
         if a["status"] != "ok":
+            continue
+        if find_spec(f"interfaces.cli.{a['site']}") is None:
             continue
         run = a["run"]
         if run.startswith("main.py "):

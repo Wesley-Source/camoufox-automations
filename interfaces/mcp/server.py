@@ -1,26 +1,48 @@
+"""Servidor MCP do hub — framework sempre; sites reais quando presentes.
+
+O framework roda sozinho (exemplo ecommerce_x + inventário). Os sites reais
+vivem no repo PRIVADO `camoufox-panels`: clone-o lado a lado deste e rode o
+`join.sh` dele (symlinks) — ou copie as pastas `core/<site>/` +
+`interfaces/{cli,mcp}/<site>.py` pra cá. Sem eles, as tools `<op>_<site>`
+não são registradas e um warning vai pro stderr (nunca stdout — stdio MCP).
+"""
+import logging
 import json
 from typing import Literal
 
 from core.automations import AUTOMATIONS
 
-from interfaces.mcp.blackbr import register as reg_blackbr
-from interfaces.mcp.newmais import register as reg_newmais
-from interfaces.mcp.rocketgestor import register as reg_rocketgestor
-from interfaces.mcp.playlist import register as reg_playlist
-from interfaces.mcp.sigma import register as reg_sigma
-from interfaces.mcp.woodcine import register as reg_woodcine
+from interfaces.mcp.ecommerce import register as reg_ecommerce
 
 from mcp.server.fastmcp import FastMCP
 
 mcp_app = FastMCP("AutomationHubMCP")
 
 # Um módulo por site; cada um registra suas tools no servidor.
-reg_blackbr(mcp_app)
-reg_newmais(mcp_app)
-reg_rocketgestor(mcp_app)
-reg_playlist(mcp_app)
-reg_sigma(mcp_app)
-reg_woodcine(mcp_app)
+# Sites ausentes NÃO derrubam o servidor — warning no stderr e segue o baile.
+_SITE_REGS = (
+    ("blackbr", "interfaces.mcp.blackbr"),
+    ("newmais", "interfaces.mcp.newmais"),
+    ("rocketgestor", "interfaces.mcp.rocketgestor"),
+    ("playlist", "interfaces.mcp.playlist"),
+    ("sigma", "interfaces.mcp.sigma"),
+    ("woodcine", "interfaces.mcp.woodcine"),
+)
+_missing = []
+for _name, _modname in _SITE_REGS:
+    try:
+        _reg = __import__(_modname, fromlist=["register"]).register
+    except ImportError:
+        _missing.append(_name)
+    else:
+        _reg(mcp_app)
+
+if _missing:
+    logging.getLogger("interfaces.mcp").warning(
+        "site module not installed — clone camoufox-panels e adicione ao "
+        "PYTHONPATH, ou copie as pastas para core/ (veja README): sites "
+        "ausentes: %s", ", ".join(_missing),
+    )
 
 
 AutomationStatus = Literal["ok", "planned", "blocked"]

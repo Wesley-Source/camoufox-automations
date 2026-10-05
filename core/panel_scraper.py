@@ -4,7 +4,7 @@ Cada sync_* recebe um client já aberto (CLI/MCP abrem com open_client() —
 um boot de browser por comando) e grava:
 - bruto em raw_snapshots (save_raw)
 - cópia limpa em panel_entities com UPSERT (save_entities), kinds prefixados
-  por site ('' no sigma, 'woodcine.'/'blackbr.').
+  por site ('' ou '<site>.').
 
 Todas as chamadas são GET — read-only por construção.
 
@@ -23,9 +23,9 @@ CHARTS = ("new-customers", "customer-retention", "revenue-forecast", "lost-reven
 
 @dataclass(frozen=True)
 class ScraperConfig:
-    name: str                 # 'sigma' | 'woodcine' | 'blackbr'
+    name: str                 # 'sigma' | '<site>'
     module: object            # módulo scraper do site (late binding p/ testes)
-    kinds_prefix: str = ""    # '' (sigma) | 'woodcine.' | 'blackbr.'
+    kinds_prefix: str = ""    # '' | '<site>.'
 
     @property
     def api(self):

@@ -23,10 +23,10 @@ def register_panel(app: typer.Typer, m) -> None:
     ks = f"{kind}." if kind else ""
     kinds_short = f"{kind}.*" if kind else "sem prefixo"
     kind_note = (
-        f"prefixados {kind}.* — não mistura com o lideriptv"
+        f"prefixados {kind}.* — não mistura com o painel de origem"
         if kind else "sem prefixo (painel original)"
     )
-    indep = " — independente do lideriptv" if kind else ""
+    indep = " — independente do painel de origem" if kind else ""
     accounts_name = Path(m.ACCOUNTS_FILE).name
     sync_help = "|".join([*m.SYNCERS, "all"])
 

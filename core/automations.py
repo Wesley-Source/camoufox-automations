@@ -100,6 +100,10 @@ AUTOMATIONS = [
     {"id": "sigma.finance", "site": "sigma", "kind": "explore", "status": "blocked",
      "what": "Rotas de financeiro/billing (blocklist do crawl; nunca visitadas)",
      "run": "precisa de explorador read-only dedicado aprovado"},
+    # ---- ecommerce_x (placeholder httpbin; padrão para o próximo site) --------
+    {"id": "ecommerce.sync", "site": "ecommerce_x", "kind": "sync", "status": "ok",
+     "what": "Demo de sincronização de produto (httpbin) + teste de regressão",
+     "run": "main.py sync-item ID"},
     # ---- woodcine (painel irmão, 2ª versão do Sigma; CRUD validado por probes 04/10/2026) ----
     {"id": "woodcine.login", "site": "woodcine", "kind": "auth", "status": "ok",
      "what": "Login no painel woodcine: imprime o token (env SIGMA_USERNAME/SIGMA_PASSWORD)",
@@ -180,9 +184,9 @@ AUTOMATIONS = [
     {"id": "newmais.customer.delete", "site": "newmais", "kind": "crud", "status": "ok",
      "what": "Soft-delete de cliente (restaurável; exige --yes E SIGMA_ALLOW_DESTRUCTIVE=1)",
      "run": "SIGMA_ALLOW_DESTRUCTIVE=1 main.py newmais-customer-delete ID --yes"},
-    # ---- blackbr (painelblackbr.com, família Sigma; painel de revendas com créditos ILIMITADOS) ----
+    # ---- blackbr (família Sigma; painel de revendas com créditos ILIMITADOS) ----
     {"id": "blackbr.login", "site": "blackbr", "kind": "auth", "status": "ok",
-     "what": "Login no painelblackbr: imprime o token (env SIGMA_USERNAME/SIGMA_PASSWORD)",
+     "what": "Login no blackbr: imprime o token (env SIGMA_USERNAME/SIGMA_PASSWORD)",
      "run": "main.py blackbr-login --save"},
     {"id": "blackbr.sync.customers", "site": "blackbr", "kind": "sync", "status": "ok",
      "what": "Sincroniza clientes do blackbr (kinds blackbr.*)",
@@ -220,7 +224,7 @@ AUTOMATIONS = [
      "what": "Soft-delete de cliente (restaurável; exige --yes E SIGMA_ALLOW_DESTRUCTIVE=1)",
      "run": "SIGMA_ALLOW_DESTRUCTIVE=1 main.py blackbr-customer-delete ID --yes"},
 
-    # ---- rocketgestor (app.rocketgestor.com; Django server-rendered NÃO-sigma; gerenciador multipainel com créditos INEXISTENTES — zz_test_* LIVRES, clientes reais intocados) ----
+    # ---- rocketgestor (Django server-rendered NÃO-sigma; gerenciador multipainel com créditos INEXISTENTES — zz_test_* LIVRES, clientes reais intocados) ----
     {"id": "rocketgestor.login", "site": "rocketgestor", "kind": "auth", "status": "ok",
      "what": "Login no Rocket Gestor (contas em rocketgestor_accounts.json)",
      "run": "main.py rocketgestor-login --save"},

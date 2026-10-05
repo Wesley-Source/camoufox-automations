@@ -242,7 +242,7 @@ def _T(doc: str, m) -> str:
     ks = f"{m.KIND}." if m.KIND else ""
     host = m.URL.split("://", 1)[1]
     kind_note = (
-        f"prefixo {m.KIND}.* — não mistura com o lideriptv"
+        f"prefixo {m.KIND}.* — não mistura com o painel de origem"
         if m.KIND else "sem prefixo (painel original)"
     )
     return (

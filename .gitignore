@@ -16,41 +16,41 @@ logs/
 .vscode/
 .idea/
 
+# Estado local de agentes (opencode)
+.omo/
+.opencode/opencode.json
+
 # Pytest
 .pytest_cache/
 
-# Credenciais e artefatos de sessão multi-conta
-sigma_accounts.json
-woodcine_accounts.json
-woodcine_session.json
-woodcine_session.lock
-.woodcine_last_good
-.woodcine_session_*.json
-.sigma_last_good
-.sigma_session_*.json
+# Credenciais e artefatos de sessão multi-conta (qualquer site)
+*_accounts.json
+*_session.json
+*_session.lock
+.*_last_good
+.*_session_*.json
 
 # Sessões e capturas de exploração (contêm token/PII)
-sigma_session.json
-sigma_session.lock
 core/*/explore/out/
 /out/
 
 # Grafo gerado
 graphify-out/
-blackbr_accounts.json
-blackbr_session.json
-blackbr_session.lock
-.blackbr_last_good
-.blackbr_session_*.json
-newmais_accounts.json
-newmais_session.json
-newmais_session.lock
-.newmais_last_good
-.newmais_session_*.json
 
-# rocketgestor (5o site — Django, sessao por cookies)
-rocketgestor_accounts.json
-rocketgestor_session.json
-rocketgestor_session.lock
-.rocketgestor_last_good
-.rocketgestor_session_*.json
+# Symlinks do join.sh (repo privado camoufox-panels — NUNCA versionar aqui)
+core/sigma
+core/woodcine
+core/blackbr
+core/newmais
+core/rocketgestor
+interfaces/cli/sigma.py
+interfaces/cli/woodcine.py
+interfaces/cli/blackbr.py
+interfaces/cli/newmais.py
+interfaces/cli/rocketgestor.py
+interfaces/mcp/sigma.py
+interfaces/mcp/woodcine.py
+interfaces/mcp/blackbr.py
+interfaces/mcp/newmais.py
+interfaces/mcp/rocketgestor.py
+interfaces/mcp/playlist.py

@@ -4,7 +4,7 @@
 
 Multi-panel web automation built to be operated by AI agents (Hermes, OpenCode, any MCP client) and humans alike. Stealth browser (Camoufox), ELT into SQLite, Typer CLI + FastMCP server — one folder per automated site, shared engines, security enforced by architecture.
 
-[![Tests](https://img.shields.io/badge/tests-163%20passing-brightgreen)]() [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]() [![MCP](https://img.shields.io/badge/MCP-compatible-purple)]()
+[![Tests](https://img.shields.io/badge/tests-6%20passing%20%2B%20157%20in%20panels%20repo-brightgreen)]() [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]() [![MCP](https://img.shields.io/badge/MCP-compatible-purple)]()
 
 > **Are you an AI agent reading this?** Start with the [Golden Rules](#golden-rules-for-ai) and the [automation inventory](#automation-inventory). They summarize what you can do, how, and what you must **never** do.
 
@@ -28,7 +28,7 @@ Security here is not suggested — it is architectural:
 4. **NEVER create/renew/delete a real entity without the owner's EXPLICIT approval.** CRUD validation on production panels is probe-only (invalid-payload 422, nonexistent-ID 404, count tripwire).
 5. **Destructive requires double flags.** CLI demands `--yes`; MCP demands `confirmar=True`; both demand `SIGMA_ALLOW_DESTRUCTIVE=1` in the environment. Don't bypass.
 6. **PII never leaves gitignored directories.** Never commit tokens, cookies, passwords, or customer data.
-7. **Panel targets are private config.** This repo ships with an `ecommerce_x` example site. Panels you connect live in gitignored config files — never in code or docs.
+7. **Panel targets are private config.** This repo ships with an `ecommerce_x` example site. Real site modules live in the private companion repo (`camoufox-panels`) — panel URLs/names never enter this repo.
 
 ## Architecture (one folder per site)
 
@@ -42,23 +42,24 @@ core/
   panel_api.py          # shared base: PanelApiClient (GET whitelist + named mutations)
                         #   + _HttpTransport (curl_cffi, FAST_SYNC) + _BrowserTransport
   panel_scraper.py      # shared base: generic sync_* (prefixed kinds per site)
+  ecommerce_x/          # example site (httpbin-based) — template for the next one
   <site>/               # per-site: auth, api, scraper, explore/ (read-only probes)
     auth.py             #   config + _login_flow + wrappers (parity tested in CI)
     api.py              #   <Site>ApiClient (subclasses PanelApiClient)
     scraper.py          #   sync_* (ELT: fetch → raw → panel_entities)
     explore/            #   discovery scripts (dev-time; keep the map alive)
       PANEL_MAP.md      #     canonical endpoint/schema map per panel
-  ecommerce_x/          # example site (httpbin-based) — template for the next one
+                        #   ↑ real sites live in the PRIVATE companion repo
 interfaces/
   cli/                  # Typer: _panel.py ENGINE (10 commands) + ~30-line spec per site
   mcp/                  # FastMCP: _panel.py ENGINE (12 tools) + ~45-line spec per site
-tests/                  # pytest — 163 tests; parity tests enforce CLI↔MCP symmetry
+tests/                  # pytest — framework tests; per-site tests live in the private repo
 main.py                 # `main.py` = CLI | `main.py mcp` = MCP server
 ```
 
 ### Adding a new site = ~75 lines of spec
 
-Copy the engine spec, fill the `SiteConfig` (URL, auth type, monitor scope), and you get the full surface: login, multi-account, sync, status, catalog, search, CRUD with gates — on both CLI and MCP, tested in CI. See `CONTRIBUTING.md`.
+Copy the engine spec, fill the `SiteConfig` (URL, auth type, monitor scope), and you get the full surface: login, multi-account, sync, status, catalog, search, CRUD with gates — on both CLI and MCP, tested in CI. See `CONTRIBUTING.md`. Real client panels go in the **private** companion repo; `ecommerce_x` here is the worked example.
 
 ## Quick start
 
@@ -67,11 +68,25 @@ git clone https://github.com/Wesley-Source/camoufox-automations.git
 cd camoufox-automations
 python3 -m venv venv && venv/bin/pip install -r requirements.txt
 venv/bin/camoufox fetch                     # downloads the stealth browser (once)
-venv/bin/python -m pytest tests/ -q         # 163 passing in ~4s
+venv/bin/python -m pytest tests/ -q         # 6 framework tests passing
 venv/bin/python main.py automations         # live inventory of what exists
 ```
 
 Connect a panel: `python main.py <site>-account add NAME` (password prompted, stored 0600, gitignored). Or point an MCP client at `main.py mcp`.
+
+## Connecting real panels (private companion repo)
+
+Real site modules are **not** in this repo — they live in the private `camoufox-panels` repo (panel URLs, PANEL_MAPs, per-site tests). The framework runs standalone; sites attach via **local symlinks**:
+
+```bash
+# both repos side by side:
+projetos/camoufox-automations/    # this repo (public framework)
+projetos/camoufox-panels/         # private sites repo
+
+cd ../camoufox-panels && ./join.sh    # idempotent; ./join.sh --unlink reverts
+```
+
+`join.sh` symlinks each site module back into its original path here (`core/<site>/`, `interfaces/{cli,mcp}/<site>.py`, `mcp/playlist.py`) and symlinks the shared engines into the private repo so its tests run standalone. With the join, the full surface returns (all `<site>-*` commands, 50+ MCP tools, 163 total tests); without it, this repo still runs and `--help` shows a notice about missing site modules.
 
 ## Performance highlights (measured, not hoped)
 
@@ -94,7 +109,7 @@ The stealth browser needs a virtual display (Linux/Xvfb). On Windows: WSL2 (reco
 ## How an AI agent operates this
 
 1. **Discover** → `main.py automations` (or MCP `listar_automacoes`). `ok` = usable; `planned` = mapped, not wired; `blocked` = explicit human approval required.
-2. **Read the map** → `core/<site>/explore/PANEL_MAP.md` (endpoints, schemas, gotchas per panel section).
+2. **Read the map** → `core/<site>/explore/PANEL_MAP.md` in the private repo (endpoints, schemas, gotchas per panel section).
 3. **Sync data** → `<site>-sync --what all` (daily routine: `--what expiring`, ~2s via FAST_SYNC).
 4. **CRUD** → `<site>-customer-*` commands / MCP tools — only with explicit owner approval, snapshot before, snapshot+diff after.
 5. **Explore new areas** → guard on, sensitive-section blocklist, small `--max`, one commit per script, findings into PANEL_MAP.md.
@@ -102,9 +117,9 @@ The stealth browser needs a virtual display (Linux/Xvfb). On Windows: WSL2 (reco
 
 ## Interfaces
 
-**CLI** (`main.py <command>`): per-site `<site>-login`, `<site>-account list|use|add|remove`, `<site>-sync`, `<site>-status`, `<site>-servers-packages`, `<site>-customer-create|update|delete|resync` + `automations`, `sync-item`.
+**CLI** (`main.py <command>`): `automations`, `sync-item` (framework, always) + per-site `<site>-login`, `<site>-account list|use|add|remove`, `<site>-sync`, `<site>-status`, `<site>-servers-packages`, `<site>-customer-create|update|delete|resync` (with the private repo joined).
 
-**MCP** (`main.py mcp`): **50+ tools** — 12–14 per panel (login, sync, status, accounts ×2, catalog, search/list + gated CRUD ×4) + inventory + example site. Docstrings follow the **Use when / Returns / Cautions** format; enum schemas validated via `Literal`.
+**MCP** (`main.py mcp`): inventory + example-site tools always; with the join, **50+ tools** — 12–14 per panel (login, sync, status, accounts ×2, catalog, search/list + gated CRUD ×4). Docstrings follow the **Use when / Returns / Cautions** format; enum schemas validated via `Literal`.
 
 MCP-over-stdio clients filter the parent environment — pass `env` explicitly in the client config (documented below in the original README; see `AGENTS.md`).
 
@@ -118,5 +133,5 @@ MCP-over-stdio clients filter the parent environment — pass `env` explicitly i
 
 1. `AGENTS.md` — safety rules + knowledge-graph hooks
 2. `core/automations.py` — what exists to be done (living source)
-3. `core/<site>/explore/PANEL_MAP.md` — how each panel works inside
+3. `core/<site>/explore/PANEL_MAP.md` (private repo) — how each panel works inside
 4. This README — the rules of the game
