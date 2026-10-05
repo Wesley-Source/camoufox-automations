@@ -26,6 +26,7 @@ import pkgutil
 from dataclasses import dataclass
 
 from core import database
+from core.http_retry import CloudflareBlocked
 
 REPO_ROOT = database.DB_PATH.rsplit("/", 1)[0]
 
@@ -218,23 +219,45 @@ def _site_packages() -> list[str]:
     return sorted(nomes)
 
 
-def _session_path_of(site: str, auth_mod) -> str | None:
-    """Sessão ativa (multi-conta se houver); None se ausente."""
-    default = None
+def _default_session_file(auth_mod) -> str | None:
+    """Arquivo de sessão default do site, qualquer convenção:
+    <SITE>_SESSION_FILE | SESSION_FILE | attr str *_session.json | cfg.session_file."""
     for attr in dir(auth_mod):
-        if attr.upper().endswith("_SESSION_FILE") and isinstance(
-                getattr(auth_mod, attr), str):
-            default = getattr(auth_mod, attr)
-            break
+        val = getattr(auth_mod, attr)
+        if isinstance(val, str) and val.endswith("_session.json") \
+                and attr.upper().endswith(("SESSION_FILE",)):
+            return val
+    for holder in ("_CFG", "cfg"):
+        cfg = getattr(auth_mod, holder, None)
+        path = getattr(cfg, "session_file", None)
+        if isinstance(path, str):
+            return path
+    return None
+
+
+def _session_path_of(site: str, auth_mod) -> str | None:
+    """Sessão ativa (multi-conta se houver); None se ausente.
+
+    Fallback: o caminho que o módulo auth acredita pode apontar pro repo
+    PRIVADO (join via symlink resolve __file__ lá) enquanto o arquivo real
+    ficou no root deste hub (padrão legado pré-refactor) — nesse caso usa
+    o arquivo do root, que é onde os comandos do hub o encontrariam.
+    """
+    resolved = None
     try:
         contas = auth_mod.load_accounts()
         if contas and hasattr(auth_mod, "resolve_active_account"):
             ativa = auth_mod.resolve_active_account(contas)
             if ativa and hasattr(auth_mod, "session_path_for"):
-                return auth_mod.session_path_for(ativa["username"], contas)
+                resolved = auth_mod.session_path_for(ativa["username"], contas)
     except Exception:
         pass  # site sem multi-conta — cai no default
-    return default
+    resolved = resolved or _default_session_file(auth_mod)
+    if resolved and not os.path.exists(resolved):
+        legado = os.path.join(REPO_ROOT, f"{site}_session.json")
+        if os.path.exists(legado):
+            return legado
+    return resolved
 
 
 def check_site_session(site: str, auth_mod) -> CheckResult:
@@ -279,17 +302,102 @@ def check_site_net(site: str, auth_mod) -> CheckResult:
     import json
     sess = json.loads(open(path, encoding="utf-8").read())
     try:
-        client = cls(token=sess["token"], transport=None)
-        status = client._status_of("/auth/me", sess["token"])
+        client = cls(token=sess["token"],
+                     transport=_probe_transport(sess))
+        resp = client._request("/auth/me")
+        status = resp.status_code
+    except CloudflareBlocked:
+        return _probe_via_browser(site, cls, path)
     except Exception as e:  # rede morta, DoH falhou etc.
         return CheckResult(f"net:{site}", "fail", f"GET /auth/me falhou: {e}")
     if status == 200:
-        return CheckResult(f"net:{site}", "ok", "GET /auth/me → 200")
+        motor = "curl_cffi" if _HAS_CURL_CFFI else "requests"
+        return CheckResult(f"net:{site}", "ok", f"GET /auth/me → 200 ({motor})")
     if status in (403, 429):
-        return CheckResult(f"net:{site}", "warn",
-                           f"HTTP {status} (Cloudflare) — use fallback browser, "
-                           "não insistir")
+        return _probe_via_browser(site, cls, path)
     return CheckResult(f"net:{site}", "fail", f"GET /auth/me → {status}")
+
+
+def _probe_via_browser(site: str, cls, session_path: str) -> CheckResult:
+    """CF barrou o transporte HTTP — 1 fetch GET no browser real, guard on.
+
+    NÃO usa ensure_logged_page (exigiria credenciais e poderia disparar
+    login — regra 6: sem brute-force). Restaura os cookies da sessão salva
+    no contexto, aguarda challenge de CF (regra 4: esperar, não falhar),
+    instala o guard e faz UM fetch GET /auth/me. Veredito honesto:
+    200 verde · 401 token morto · 403/429 mesmo no browser = IP bloqueado
+    (aguardar/proxy/relogin — nada a fazer daqui, NÃO insistir).
+    """
+    import json as _json
+    from urllib.parse import urlparse
+
+    try:
+        sess = _json.loads(open(session_path, encoding="utf-8").read())
+        if not sess.get("token"):
+            return CheckResult(f"net:{site}", "fail", "sessão sem token")
+        from core.browser import BrowserEngine, is_cf_challenge
+        from core.guard import install_guard
+        from core.panel_api import _AXIOS_HEADERS, _BrowserTransport
+
+        origin = (f"{urlparse(cls.API_BASE).scheme}://"
+                  f"{urlparse(cls.API_BASE).hostname}")
+        with BrowserEngine.get_page() as page:
+            ctx = page.context
+            ctx.clear_cookies()
+            cookies = [c for c in sess.get("cookies", [])
+                       if c.get("name") and c.get("value")]
+            if cookies:
+                ctx.add_cookies(cookies)
+            page.goto(origin, timeout=60_000)
+            for _ in range(12):  # ~60s: CF challenge pode levar ~10s+
+                if not is_cf_challenge(page):
+                    break
+                page.wait_for_timeout(5_000)
+            bloqueado = is_cf_challenge(page)
+            install_guard(page)  # kill switch: só GET passa daqui
+            transport = _BrowserTransport(page, extra_headers=_AXIOS_HEADERS)
+            r = transport.get(f"{cls.API_BASE}/auth/me",
+                              headers={"Authorization":
+                                       f"Bearer {sess['token']}"})
+        if r.status_code == 200:
+            return CheckResult(f"net:{site}", "ok",
+                               "GET /auth/me → 200 (browser — CF barrou o "
+                               "HTTP direto)")
+        if bloqueado:
+            return CheckResult(
+                f"net:{site}", "warn",
+                f"CF bloqueou até o browser ({r.status_code}; 'Attention "
+                "Required' = IP bloqueado) — aguardar/proxy/relogin; "
+                "validade do token indefinível daqui")
+        if r.status_code == 401:
+            return CheckResult(f"net:{site}", "fail",
+                               "token inválido (401) — sessão morta, relogue")
+        if r.status_code in (403, 429):
+            return CheckResult(f"net:{site}", "warn",
+                               f"HTTP {r.status_code} — sessão/clarence "
+                               "vencida; relogue")
+        return CheckResult(f"net:{site}", "fail",
+                           f"GET /auth/me → {r.status_code} (browser)")
+    except Exception as e:
+        return CheckResult(f"net:{site}", "fail",
+                           f"probe browser falhou: {e}")
+
+
+try:
+    import curl_cffi  # noqa: F401
+    _HAS_CURL_CFFI = True
+except ImportError:
+    _HAS_CURL_CFFI = False
+
+
+def _probe_transport(sess: dict):
+    """Transporte do healthcheck: FAST_SYNC (curl_cffi, mesmo do sync) se
+    houver; requests puro como fallback (CF pode barrar → warn, não retry)."""
+    if _HAS_CURL_CFFI:
+        from core.panel_api import _AXIOS_HEADERS, _HttpTransport
+        return _HttpTransport(sess["token"], sess.get("cookies") or [],
+                              extra_headers=_AXIOS_HEADERS)
+    return None
 
 
 def _panel_client():

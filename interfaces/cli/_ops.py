@@ -112,7 +112,7 @@ def register(app: typer.Typer):
     def cli_doctor(
         net: bool = typer.Option(False, "--net", help="Inclui healthcheck de rede (GET puro, um por site)"),
     ):
-        """Diagnóstico do ambiente do hub: venv, banco, join, sessões, env, deps — verde/amarelo/vermelho."""
+        """Diagnóstico do ambiente do hub: venv, banco, join, sessões, env, deps — verde/amarelo/vermelho. --net faz healthcheck GET por site (HTTP direto; CF bloqueando → 1 fetch via browser com guard)."""
         results = doctor_engine.run_checks(with_net=net)
         _STATUS = {"ok": typer.colors.GREEN, "warn": typer.colors.YELLOW,
                    "fail": typer.colors.RED}
