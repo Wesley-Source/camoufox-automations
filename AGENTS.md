@@ -97,7 +97,9 @@ Nomes e URLs dos painéis NUNCA entram neste repo público. Regras inegociáveis
     local seguem funcionando.
 11. **Retry só em GET, CF nunca se insiste** (padrão framework-v2,
     `core/http_retry.py`): todo GET de painel passa pelo `retry_call`
-    (backoff exponencial+jitter em 5xx/rede); 403/429 levantam
-    `CloudflareBlocked` na HORA — fallback é browser, não segunda
-    tentativa. MUTAÇÃO NUNCA RE-TENTA (`_mutate` fora do retry — risco
-    de mutação dupla). Healthchecks (doctor) fazem 1 GET único, sem retry.
+    (backoff exponencial+jitter) — no PanelApiClient SÓ 5xx transitórios
+    re-tentam; erros de rede/DNS e 403/429 (Cloudflare) falham na 1ª
+    tentativa — fallback é browser, não segunda tentativa. Uso direto do
+    engine levanta `CloudflareBlocked` em 403/429 (on_cf="raise").
+    MUTAÇÃO NUNCA RE-TENTA (`_mutate` fora do retry — risco de mutação
+    dupla). Healthchecks (doctor) fazem 1 GET único, sem retry.

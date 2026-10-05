@@ -115,7 +115,7 @@ Generic, multi-panel tools that work on the local SQLite mirror (or the environm
 
 Alert rules are declarative JSON (`--rules file.json`): `[{"type": "expiring_within", "kind": "blackbr.customer", "days": 3}, {"type": "stale_sync", "kind": "…", "hours": 24}, {"type": "count_below", "kind": "…", "threshold": 10}]`. Without `--rules`, rules are auto-discovered from the kinds present in the DB. Webhook payloads carry only safe projections (no passwords, no M3U URLs); `alerts check` NEVER posts anywhere.
 
-All panel API GETs go through a unified retry/backoff layer (`core/http_retry.py`): transient 5xx/network errors retry with exponential backoff + jitter; **403/429 (Cloudflare) fail fast** with a browser-fallback hint — never insist against CF. Mutations are never retried.
+All panel API GETs go through a unified retry/backoff layer (`core/http_retry.py`): transient 5xx errors retry with exponential backoff + jitter; network/DNS errors and **403/429 (Cloudflare) fail fast on the first attempt** — the browser fallback is the way out, never a second HTTP try. Mutations are never retried.
 
 ## Windows
 

@@ -26,7 +26,6 @@ import pkgutil
 from dataclasses import dataclass
 
 from core import database
-from core.http_retry import CloudflareBlocked
 
 REPO_ROOT = database.DB_PATH.rsplit("/", 1)[0]
 
@@ -306,8 +305,6 @@ def check_site_net(site: str, auth_mod) -> CheckResult:
                      transport=_probe_transport(sess))
         resp = client._request("/auth/me")
         status = resp.status_code
-    except CloudflareBlocked:
-        return _probe_via_browser(site, cls, path)
     except Exception as e:  # rede morta, DoH falhou etc.
         return CheckResult(f"net:{site}", "fail", f"GET /auth/me falhou: {e}")
     if status == 200:

@@ -79,6 +79,32 @@ def test_erro_de_rede_recupera_na_segunda():
     assert resp.status_code == 200
 
 
+def test_dns_nunca_re_tenta():
+    tentativas = {"n": 0}
+
+    def fn():
+        tentativas["n"] += 1
+        raise requests.exceptions.ConnectionError(
+            "Temporary failure in name resolution")
+
+    with pytest.raises(requests.exceptions.ConnectionError):
+        retry_call(fn, attempts=5, sleep=lambda s: None)
+    assert tentativas["n"] == 1  # DNS é persistente: retry não ajuda
+
+
+def test_on_cf_return_devolve_resposta_sem_retry():
+    chamadas = []
+    resp = retry_call(lambda: chamadas.append(1) or R(403),
+                      attempts=5, on_cf="return", sleep=lambda s: None)
+    assert resp.status_code == 403
+    assert len(chamadas) == 1
+
+
+def test_on_cf_invalido():
+    with pytest.raises(ValueError, match="on_cf"):
+        retry_call(lambda: R(200), on_cf="exploin")
+
+
 def test_erro_nao_transitorio_propaga_sem_retry():
     chamadas = []
 
@@ -150,12 +176,49 @@ def test_client_get_retenta_5xx_e_passa():
     assert sess.calls == 2
 
 
-def test_client_get_403_levanta_cf_blocked_sem_retry():
+def test_client_get_403_sem_retry_vira_api_error():
+    # contrato do painel: 403 NÃO tem retry e NÃO vira CloudflareBlocked —
+    # volta como API_ERROR (fallback browser decide o caminho, não o retry)
     sess = FakeSession([FakeResp(403)])
     c = ClientFake(sess)
-    with pytest.raises(CloudflareBlocked):
+    with pytest.raises(PanelApiError) as e:
         c._get("/x")
+    assert e.value.status == 403
     assert sess.calls == 1  # CF: falha rápida, sem segunda tentativa
+
+
+def test_client_erro_rede_propaga_na_primeira():
+    # contrato do painel: offline/timeout NÃO re-tenta (fallback é browser)
+    estado = {"n": 0}
+
+    class Sess:
+        headers = {}
+
+        def get(self, *a, **kw):
+            estado["n"] += 1
+            raise requests.exceptions.ConnectionError("connection refused")
+
+    c = ClientFake(Sess())
+    with pytest.raises(requests.exceptions.ConnectionError):
+        c._get("/x")
+    assert estado["n"] == 1
+
+
+def test_client_dns_propaga_na_primeira():
+    estado = {"n": 0}
+
+    class Sess:
+        headers = {}
+
+        def get(self, *a, **kw):
+            estado["n"] += 1
+            raise requests.exceptions.ConnectionError(
+                "Temporary failure in name resolution")
+
+    c = ClientFake(Sess())
+    with pytest.raises(requests.exceptions.ConnectionError):
+        c._get("/x")
+    assert estado["n"] == 1
 
 
 def test_client_get_5xx_esgotado_vira_api_error():

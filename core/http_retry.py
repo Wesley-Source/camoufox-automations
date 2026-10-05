@@ -74,6 +74,15 @@ def _is_network_error(exc: Exception) -> bool:
     return any(m in name for m in ("timeout", "connection", "network"))
 
 
+_DNS_MARKERS = ("name or service not known", "temporary failure in name resolution",
+                "nameresolutionerror", "getaddrinfo failed")
+
+
+def _is_dns_failure(exc: Exception) -> bool:
+    """DNS não resolve — quase sempre persistente; re-tentar não ajuda."""
+    return any(m in str(exc).lower() for m in _DNS_MARKERS)
+
+
 def backoff_delay(attempt: int, base_delay: float, max_delay: float) -> float:
     """Backoff exponencial + jitter: base*2^attempt com ruído ±25%.
 
@@ -91,16 +100,24 @@ def retry_call(
     max_delay: float = 8.0,
     retry_statuses: frozenset[int] | set[int] = RETRYABLE_STATUSES,
     sleep: Callable[[float], None] = time.sleep,
+    retry_network: bool = True,
+    on_cf: str = "raise",
 ) -> object:
     """Chama `fn()` até `attempts` vezes com backoff exponencial + jitter.
 
-    - 403/429 → CloudflareBlocked NA HORA (zero retry; ver docstring do módulo).
-    - 5xx em `retry_statuses` / exceção de rede → retry com backoff.
-    - Esgotou em 5xx → devolve a ÚLTIMA resposta (caller valida status).
-    - Exceção de rede na última tentativa → re-levanta.
+    - 403/429 → CloudflareBlocked NA HORA se on_cf="raise" (padrão; ver
+      docstring do módulo) ou devolve a resposta se on_cf="return" — em
+      ambos, ZERO retry contra o Cloudflare.
+    - 5xx em `retry_statuses` → retry com backoff; esgotou, devolve a
+      ÚLTIMA resposta (caller valida status).
+    - Erro de rede → retry se retry_network; DNS nunca re-tenta (falha
+      persistente — no painel a saída é DoH/fallback browser).
+    - Erro não-transitório (bug) → propaga na hora, sem retry.
     """
     if attempts < 1:
         raise ValueError(f"attempts deve ser >= 1 (recebido {attempts})")
+    if on_cf not in ("raise", "return"):
+        raise ValueError(f"on_cf deve ser 'raise' ou 'return' (recebido {on_cf!r})")
 
     last_resp = None
     last_exc: Exception | None = None
@@ -108,14 +125,17 @@ def retry_call(
         try:
             resp = fn()
         except Exception as exc:
-            if not _is_network_error(exc):
+            if _is_dns_failure(exc) or not _is_network_error(exc) \
+                    or not retry_network:
                 raise
             last_exc = exc
             last_resp = None
         else:
             status = _status(resp)
             if status in CF_STATUSES:
-                raise CloudflareBlocked(status, getattr(resp, "url", "") or "")
+                if on_cf == "raise":
+                    raise CloudflareBlocked(status, getattr(resp, "url", "") or "")
+                return resp
             if status is None or status not in retry_statuses:
                 return resp  # sucesso (ou status que o caller valida)
             last_resp = resp
