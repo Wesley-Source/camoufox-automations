@@ -1,6 +1,5 @@
 camoufox
 mcp<2
 typer
-sqlalchemy
 pytest
 pydantic

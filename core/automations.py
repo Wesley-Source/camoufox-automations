@@ -100,10 +100,6 @@ AUTOMATIONS = [
     {"id": "sigma.finance", "site": "sigma", "kind": "explore", "status": "blocked",
      "what": "Rotas de financeiro/billing (blocklist do crawl; nunca visitadas)",
      "run": "precisa de explorador read-only dedicado aprovado"},
-    # ---- ecommerce_x (placeholder httpbin; padrão para o próximo site) --------
-    {"id": "ecommerce.sync", "site": "ecommerce_x", "kind": "sync", "status": "ok",
-     "what": "Demo de sincronização de produto (httpbin) + teste de regressão",
-     "run": "main.py sync-item ID"},
     # ---- woodcine (painel irmão, 2ª versão do Sigma; CRUD validado por probes 04/10/2026) ----
     {"id": "woodcine.login", "site": "woodcine", "kind": "auth", "status": "ok",
      "what": "Login no painel woodcine: imprime o token (env SIGMA_USERNAME/SIGMA_PASSWORD)",

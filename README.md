@@ -99,7 +99,6 @@ core/
   woodcine/             # SITE: woodcine.sigma.st (idêntico ao sigma/)
   blackbr/              # SITE: painelblackbr.com (idêntico ao sigma/)
   newmais/              # SITE: newmais.sigma.vin (idêntico ao sigma/)
-  ecommerce_x/          # SITE: placeholder httpbin (padrão para o próximo site)
     scraper.py
     explore/
 interfaces/
@@ -111,7 +110,7 @@ interfaces/
                         #   + playlist.py (playlist_cliente; mostra
                         #   login/senha IPTV do cliente EM CLARO por decisão do
                         #   dono — exceção da regra 5, ver AGENTS.md)
-tests/                  # pytest (163 testes; paridade ×4 em CI — drift entre
+tests/                  # pytest (162 testes; paridade ×4 em CI — drift entre
                         #   sites quebra o build; superfície CLI/MCP gateada em
                         #   test_cli_mcp_parity.py)
 main.py                 # `main.py` = CLI | `main.py mcp` = servidor MCP
@@ -284,7 +283,7 @@ Fonte viva: `core/automations.py` (este espelho pode envelhecer; o comando
 
 | Status | Qtd | Exemplos |
 |---|---|---|
-| `ok` | 60+ | login/sync/status/CRUD por painel (×4), 7+ exploradores por site, demo ecommerce |
+| `ok` | 60+ | login/sync/status/CRUD por painel (×4), 7+ exploradores por site |
 | `planned` | ~8 | notices, top10, ai-analysis, export CSV, restore, sync agendado |
 | `blocked` | 3+ | BotBot/mensagens, bulk (mass-delete/move/migration), financeiro |
 
@@ -296,7 +295,7 @@ comandos `<site>-login`, `<site>-account list|use|add|remove`, `<site>-sync`,
 (sigma, woodcine, blackbr, newmais) + `automations`, `sync-item`.
 MCP (`main.py mcp`): **50 tools** — 12-14 por painel (login, sincronizar,
 status, contas ×2, pacotes, buscar/listar clientes + CRUD ×4 com gates) +
-`listar_automacoes` + ecommerce. A fonte viva é `main.py automations`.
+`listar_automacoes`. A fonte viva é `main.py automations`.
 
 ### Paridade CLI ↔ MCP
 
