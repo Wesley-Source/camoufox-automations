@@ -24,6 +24,7 @@ _SITE_REGS = (
     ("blackbr", "interfaces.mcp.blackbr"),
     ("newmais", "interfaces.mcp.newmais"),
     ("rocketgestor", "interfaces.mcp.rocketgestor"),
+    ("sigaa", "interfaces.mcp.sigaa"),
     ("playlist", "interfaces.mcp.playlist"),
     ("sigma", "interfaces.mcp.sigma"),
     ("woodcine", "interfaces.mcp.woodcine"),

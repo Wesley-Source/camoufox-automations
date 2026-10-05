@@ -31,7 +31,7 @@ else:
 
 # Um módulo por site; cada um registra seus comandos no app.
 # Sites ausentes NÃO derrubam o hub — aviso amigável e segue o baile.
-_SITES = ("blackbr", "newmais", "rocketgestor", "sigma", "woodcine")
+_SITES = ("blackbr", "newmais", "rocketgestor", "sigma", "sigaa", "woodcine")
 _missing = []
 for _name in _SITES:
     try:
