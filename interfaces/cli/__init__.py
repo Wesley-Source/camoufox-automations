@@ -14,8 +14,10 @@ from core.automations import AUTOMATIONS
 cli_app = typer.Typer(help="CLI Hub de Automações")
 
 from interfaces.cli import ecommerce  # noqa: E402  (exemplo httpbin — vem com o framework)
+from interfaces.cli import _ops  # noqa: E402  (export/alerts/doctor/snapshot — framework)
 
 ecommerce.register(cli_app)
+_ops.register(cli_app)
 
 # Um módulo por site; cada um registra seus comandos no app.
 # Sites ausentes NÃO derrubam o hub — aviso amigável e segue o baile.

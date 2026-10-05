@@ -123,7 +123,14 @@ def count_entities(kind: str = None) -> int:
 
 
 def _rows_to_entities(rows) -> list[dict]:
-    return [{"id": r[0], **json.loads(r[1]), "_updated_at": r[2]} for r in rows]
+    out = []
+    for r in rows:
+        payload = json.loads(r[1])
+        # payloads de list/scalar (charts, stats) não espalham — embrulha
+        if not isinstance(payload, dict):
+            payload = {"payload": payload}
+        out.append({"id": r[0], **payload, "_updated_at": r[2]})
+    return out
 
 
 def list_entities(kind: str, limit: int = 50, offset: int = 0) -> list[dict]:
@@ -133,6 +140,17 @@ def list_entities(kind: str, limit: int = 50, offset: int = 0) -> list[dict]:
             "SELECT external_id, payload, updated_at FROM panel_entities "
             "WHERE kind = ? ORDER BY updated_at DESC, external_id LIMIT ? OFFSET ?",
             (kind, limit, offset),
+        ).fetchall()
+    return _rows_to_entities(rows)
+
+
+def all_entities(kind: str) -> list[dict]:
+    """TODAS as entidades de um kind (alertas/export usam — sem paginação)."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT external_id, payload, updated_at FROM panel_entities "
+            "WHERE kind = ? ORDER BY external_id",
+            (kind,),
         ).fetchall()
     return _rows_to_entities(rows)
 
