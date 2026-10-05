@@ -29,6 +29,8 @@ from urllib.parse import quote
 import requests
 import typer
 
+from core.http_retry import retry_call
+
 
 _DOH_URL = "https://dns.google/resolve"
 _BODY_SNIPPET = 500
@@ -251,6 +253,11 @@ class PanelApiClient:
     # transporte HTTP direto (curl_cffi) no mode 'auto' — ligar por painel
     # SOMENTE após validar sync HTTP vs browser (contagens idênticas).
     FAST_SYNC = False
+    # Retry/backoff de LEITURA (core/http_retry): 5xx/rede tentam de novo com
+    # backoff+jitter; 403/429 (Cloudflare) falham rápido (CloudflareBlocked,
+    # dica de fallback browser). Cobra SÓ o _request (GET) — mutação nunca
+    # re-tenta (risco de mutação dupla). Testes podem zerar (setar 1).
+    RETRY_ATTEMPTS = 3
     _AUTH = None  # módulo auth do site (load_session/ensure_logged_page/default_proxy)
 
     def __init__(self, token: str = None, session_path: str = None,
@@ -315,6 +322,18 @@ class PanelApiClient:
         return ip
 
     def _request(self, path: str, params: dict | None = None) -> requests.Response:
+        """GET com retry/backoff (core.http_retry) — 5xx/rede tentam de novo;
+        403/429 (Cloudflare) levantam CloudflareBlocked sem retry (fallback
+        browser é a saída, não insistir). MUTAÇÃO (_mutate) NUNCA re-tenta.
+        Testes: RETRY_ATTEMPTS=1 desliga."""
+        attempts = max(1, int(getattr(self, "RETRY_ATTEMPTS",
+                                       type(self).RETRY_ATTEMPTS)))
+        return retry_call(
+            lambda: self._request_once(path, params),
+            attempts=attempts,
+        )
+
+    def _request_once(self, path: str, params: dict | None = None) -> requests.Response:
         auth = {"Authorization": f"Bearer {self.token}"}
         if self._browser:
             return self._session.get(f"{type(self).API_BASE}{path}", params=params,
