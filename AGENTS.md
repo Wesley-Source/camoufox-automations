@@ -91,7 +91,13 @@ Nomes e URLs dos painéis NUNCA entram neste repo público. Regras inegociáveis
    offline; importtime medido caiu 1.21s → 0.53s no ciclo de testes. Ao criar
    site novo, seguir o padrão (ver os auth.py dos sites no repo privado).
 10. **Display do browser**: `HUB_DISPLAY` escolhe `virtual` (Xvfb, padrão
-   Linux), `headless` (nativo — revalidar CF painel a painel) ou `x11`
-   (DISPLAY externo). No Windows nativo só `headless`/`x11`; o recomendado
-   é WSL2 (README 'Windows & displays'). Sem browser, FAST_SYNC e busca
-   local seguem funcionando.
+    Linux), `headless` (nativo — revalidar CF painel a painel) ou `x11`
+    (DISPLAY externo). No Windows nativo só `headless`/`x11`; o recomendado
+    é WSL2 (README 'Windows & displays'). Sem browser, FAST_SYNC e busca
+    local seguem funcionando.
+11. **Retry só em GET, CF nunca se insiste** (padrão framework-v2,
+    `core/http_retry.py`): todo GET de painel passa pelo `retry_call`
+    (backoff exponencial+jitter em 5xx/rede); 403/429 levantam
+    `CloudflareBlocked` na HORA — fallback é browser, não segunda
+    tentativa. MUTAÇÃO NUNCA RE-TENTA (`_mutate` fora do retry — risco
+    de mutação dupla). Healthchecks (doctor) fazem 1 GET único, sem retry.

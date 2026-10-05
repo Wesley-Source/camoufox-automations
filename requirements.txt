@@ -3,3 +3,4 @@ mcp<2
 typer
 pytest
 pydantic
+openpyxl
