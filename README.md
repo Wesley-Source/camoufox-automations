@@ -102,6 +102,21 @@ cd ../camoufox-panels && ./join.sh    # idempotent; ./join.sh --unlink reverts
 
 Credentials in `<site>_accounts.json` (gitignored, 0600); file order = priority. Active account resolved per command: `SIGMA_ACCOUNT` env > `. <site>_last_good` pointer > first in file. Each account keeps its own session file. CLI: `<site>-account list|use|add|remove`; MCP: `listar_contas_*` / `trocar_conta_*`.
 
+## Framework ops tools
+
+Generic, multi-panel tools that work on the local SQLite mirror (or the environment) — no panel names hard-coded. Security posture: local reads and GET-only healthchecks; nothing here mutates a panel.
+
+| Tool | What it does | Example |
+|---|---|---|
+| `export` | Dataset export from the local DB to CSV/JSON/XLSX (`--site`, `--table`, `--kind`, `--fields`, `--limit`) | `main.py export --site blackbr --format csv` |
+| `alerts` | Declarative rules over `panel_entities` (expiring within N days, stale sync, count below threshold) → console; generic webhook via `HUB_ALERT_WEBHOOK_URL` | `main.py alerts check` (never sends) / `main.py alerts run` |
+| `snapshot` | DB-state snapshot (payload hashes) + readable diff — audit any write operation | `main.py snapshot before` … write … `main.py snapshot after out/snapshot-before-*.json` |
+| `doctor` | Environment diagnosis: venv, database, join symlinks, session ages, destructive-gate env, dependencies; `--net` adds a GET-only `/auth/me` probe per site (403/429 = yellow "use browser fallback", never insist) | `main.py doctor --net` |
+
+Alert rules are declarative JSON (`--rules file.json`): `[{"type": "expiring_within", "kind": "blackbr.customer", "days": 3}, {"type": "stale_sync", "kind": "…", "hours": 24}, {"type": "count_below", "kind": "…", "threshold": 10}]`. Without `--rules`, rules are auto-discovered from the kinds present in the DB. Webhook payloads carry only safe projections (no passwords, no M3U URLs); `alerts check` NEVER posts anywhere.
+
+All panel API GETs go through a unified retry/backoff layer (`core/http_retry.py`): transient 5xx errors retry with exponential backoff + jitter; network/DNS errors and **403/429 (Cloudflare) fail fast on the first attempt** — the browser fallback is the way out, never a second HTTP try. Mutations are never retried.
+
 ## Windows
 
 The stealth browser needs a virtual display (Linux/Xvfb). On Windows: WSL2 (recommended, everything works), native headless (`HUB_DISPLAY=headless` — revalidate anti-bot per panel), or an external X server (`HUB_DISPLAY=x11`). Everything HTTP-only (FAST_SYNC, local DB reads) works on native Windows with no display at all.

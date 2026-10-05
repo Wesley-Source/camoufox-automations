@@ -17,6 +17,18 @@ from interfaces.cli import ecommerce  # noqa: E402  (exemplo httpbin — vem com
 
 ecommerce.register(cli_app)
 
+# Ops do framework (export/alerts/doctor/snapshot). Se o módulo não existir
+# na árvore (ex.: repo privado com join parcial), o hub segue de pé — mesmo
+# padrão dos sites ausentes abaixo.
+try:
+    from interfaces.cli import _ops
+except ImportError:
+    logging.getLogger("interfaces.cli").warning(
+        "interfaces.cli._ops ausente — comandos export/alerts/doctor/snapshot "
+        "não registrados (join.sh precisa linkar _ops.py + engines core/)")
+else:
+    _ops.register(cli_app)
+
 # Um módulo por site; cada um registra seus comandos no app.
 # Sites ausentes NÃO derrubam o hub — aviso amigável e segue o baile.
 _SITES = ("blackbr", "newmais", "rocketgestor", "sigma", "woodcine")

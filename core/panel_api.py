@@ -29,6 +29,8 @@ from urllib.parse import quote
 import requests
 import typer
 
+from core.http_retry import retry_call
+
 
 _DOH_URL = "https://dns.google/resolve"
 _BODY_SNIPPET = 500
@@ -251,6 +253,11 @@ class PanelApiClient:
     # transporte HTTP direto (curl_cffi) no mode 'auto' — ligar por painel
     # SOMENTE após validar sync HTTP vs browser (contagens idênticas).
     FAST_SYNC = False
+    # Retry/backoff de LEITURA (core/http_retry): SÓ 5xx transitórios tentam
+    # de novo (backoff+jitter). Erros de rede/DNS e 403/429 (Cloudflare)
+    # falham na 1ª tentativa — fallback é browser, não re-insistir. Cobra SÓ
+    # o _request (GET); mutação nunca re-tenta (risco de mutação dupla).
+    RETRY_ATTEMPTS = 3
     _AUTH = None  # módulo auth do site (load_session/ensure_logged_page/default_proxy)
 
     def __init__(self, token: str = None, session_path: str = None,
@@ -315,6 +322,22 @@ class PanelApiClient:
         return ip
 
     def _request(self, path: str, params: dict | None = None) -> requests.Response:
+        """GET com retry/backoff (core.http_retry), configurado conservador:
+        re-tenta SÓ 5xx transitórios. Erros de rede/DNS propagam na 1ª
+        tentativa (contrato dos testes do painel; offline a saída é fallback
+        browser, não re-insistir). 403/429 (Cloudflare) NÃO têm retry —
+        voltam como resposta e _get levanta API_ERROR (fallback browser é a
+        saída). MUTAÇÃO (_mutate) NUNCA re-tenta. Testes: RETRY_ATTEMPTS=1."""
+        attempts = max(1, int(getattr(self, "RETRY_ATTEMPTS",
+                                       type(self).RETRY_ATTEMPTS)))
+        return retry_call(
+            lambda: self._request_once(path, params),
+            attempts=attempts,
+            retry_network=False,
+            on_cf="return",
+        )
+
+    def _request_once(self, path: str, params: dict | None = None) -> requests.Response:
         auth = {"Authorization": f"Bearer {self.token}"}
         if self._browser:
             return self._session.get(f"{type(self).API_BASE}{path}", params=params,
